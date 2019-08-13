@@ -70,24 +70,33 @@ proto::MapBuilderOptions CreateMapBuilderOptions(
   return options;
 }
 
+/*
+ * MapBuilder的构造函数，基本上要做的就是给MapBuilder的配置项赋值的一些操作，
+ * 根据传入的参数option中的配置要设置是2d建图还是3d建图，2d和3d建图要分别设置不同的PoseGraph。
+ */
 MapBuilder::MapBuilder(const proto::MapBuilderOptions& options)
     : options_(options), thread_pool_(options.num_background_threads()) {
   CHECK(options.use_trajectory_builder_2d() ^
         options.use_trajectory_builder_3d());
-  if (options.use_trajectory_builder_2d()) {
+  if (options.use_trajectory_builder_2d()) {                                // 设置2d建图
     pose_graph_ = common::make_unique<PoseGraph2D>(
         options_.pose_graph_options(),
         common::make_unique<optimization::OptimizationProblem2D>(
             options_.pose_graph_options().optimization_problem_options()),
         &thread_pool_);
   }
-  if (options.use_trajectory_builder_3d()) {
+  if (options.use_trajectory_builder_3d()) {                                // 设置3d建图
     pose_graph_ = common::make_unique<PoseGraph3D>(
         options_.pose_graph_options(),
         common::make_unique<optimization::OptimizationProblem3D>(
             options_.pose_graph_options().optimization_problem_options()),
         &thread_pool_);
   }
+  /*
+   * sensor_collator_是一个接口sensor::CollatorInterface的智能指针。
+   * 根据options.collate_by_trajectory()的不同，sensor::CollatorInterface有两种不同的实现方式，
+   * 分别是sensor::TrajectoryCollator和sensor::Collator。一般默认是0。
+   */
   if (options.collate_by_trajectory()) {
     sensor_collator_ = common::make_unique<sensor::TrajectoryCollator>();
   } else {
