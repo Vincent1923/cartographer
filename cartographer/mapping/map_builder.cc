@@ -40,12 +40,21 @@ namespace mapping {
 namespace {
 
 using mapping::proto::SerializedData;
-
+/**
+ * @brief SelectRangeSensorIds  从传感器数据的topic名字expected_sensor_ids中选择激光测距仪数据
+ * @param expected_sensor_ids   所有输入的传感器数据topic名字，例如scan，imu，odom等。
+ *                              MapBuilder::SensorId实际的定义为cartographer::mapping::TrajectoryBuilderInterface::SensorId，
+ *                              SensorId把SensorType和传感器topic名称（类型为std::string）绑定在一起。
+ * @return                      激光测距仪数据的topic名字
+ */
 std::vector<std::string> SelectRangeSensorIds(
     const std::set<MapBuilder::SensorId>& expected_sensor_ids) {
-  std::vector<std::string> range_sensor_ids;
+  std::vector<std::string> range_sensor_ids;  // 激光测距仪数据的topic名字
+  LOG(WARNING) << "Select range sensor ids:";
   for (const MapBuilder::SensorId& sensor_id : expected_sensor_ids) {
+    std::cout << "sensor_id.id: " << sensor_id.id << std::endl;
     if (sensor_id.type == MapBuilder::SensorId::SensorType::RANGE) {
+      std::cout << "range_sensor_ids: " << sensor_id.id << std::endl;
       range_sensor_ids.push_back(sensor_id.id);
     }
   }
@@ -104,12 +113,32 @@ MapBuilder::MapBuilder(const proto::MapBuilderOptions& options)
   }
 }
 
+// 创建一个新的TrajectoryBuilder并返回它的trajectory_id
 int MapBuilder::AddTrajectoryBuilder(
     const std::set<SensorId>& expected_sensor_ids,
     const proto::TrajectoryBuilderOptions& trajectory_options,
     LocalSlamResultCallback local_slam_result_callback) {
+  /*
+   * 生成trajectory_id，trajectory_builders_是一个向量，存着所有的trajectory。
+   * 因此，当有一个新的trajectory时，以向量的size值作为新的trajectory，加入到trajectory_builders_中。
+   */
   const int trajectory_id = trajectory_builders_.size();
-  if (options_.use_trajectory_builder_3d()) {
+  LOG(WARNING) << "MapBuilder::AddTrajectoryBuilder:";
+  std::cout << "trajectory_builders_.size(): " << trajectory_builders_.size() << std::endl;
+  std::cout << "trajectory_id: " << trajectory_id << std::endl;
+  std::cout << "options_.use_trajectory_builder_2d(): " << options_.use_trajectory_builder_2d() << std::endl;
+  std::cout << "options_.use_trajectory_builder_3d(): " << options_.use_trajectory_builder_3d() << std::endl;
+  /*
+   * 可以看到，根据是2d建图还是3d建图分为了两种情况。
+   * 针对两种不同的情况，首先建立一个LocalTrajectoryBuilder2D或LocalTrajectoryBuilder3D的变量local_trajectory_builder；
+   * 这个类是不带Loop Closure的Local Slam，包含了Pose Extrapolator，Scan Matching等；
+   * 但注意，这两个类并没有继承TrajectoryBuilder，并不是一个TrajectoryBuilder的实现，而只是一个工具类，
+   * 真正地创建一个TrajectoryBuilder是在后面，trajectory_builders_的push_back函数里面。
+   * 其中CollatedTrajectoryBuilder继承了接口TrajectoryBuilder；而前面生成的local_trajectory_builder
+   * 则用于CreateGlobalTrajectoryBuilder2D函数的第一个参数，用于生成一个CollatedTrajectoryBuilder的智能指针。
+   * CreateGlobalTrajectoryBuilder2D函数定义在/mapping/internal/global_trajectory_builder.h中。
+   */
+  if (options_.use_trajectory_builder_3d()) {  // 根据配置参数选择是3d情况还是2d情况
     std::unique_ptr<LocalTrajectoryBuilder3D> local_trajectory_builder;
     if (trajectory_options.has_trajectory_builder_3d_options()) {
       local_trajectory_builder = common::make_unique<LocalTrajectoryBuilder3D>(
@@ -124,22 +153,33 @@ int MapBuilder::AddTrajectoryBuilder(
                 std::move(local_trajectory_builder), trajectory_id,
                 static_cast<PoseGraph3D*>(pose_graph_.get()),
                 local_slam_result_callback)));
-  } else {
+  } else {  // 使用2d的trajectory builder
+    // LocalTrajectoryBuilder2D定义在/mapping/internal/2d/local_trajectory_builder_2d.h中
     std::unique_ptr<LocalTrajectoryBuilder2D> local_trajectory_builder;
-    if (trajectory_options.has_trajectory_builder_2d_options()) {
+    if (trajectory_options.has_trajectory_builder_2d_options()) {  // 是否有跟该trajectory相关的参数，如果有就设置一下
+      // 根据参数实例化这个LocalTrajectoryBuilder3D的变量
       local_trajectory_builder = common::make_unique<LocalTrajectoryBuilder2D>(
           trajectory_options.trajectory_builder_2d_options(),
-          SelectRangeSensorIds(expected_sensor_ids));
+          SelectRangeSensorIds(expected_sensor_ids));  // SelectRangeSensorIds()函数返回expected_sensor_ids中激光的topic名称
     }
-    DCHECK(dynamic_cast<PoseGraph2D*>(pose_graph_.get()));
+    // 检查类型转化
+    DCHECK(dynamic_cast<PoseGraph2D*>(pose_graph_.get()));  // dynamic_cast是强制类型转化，把PoseGraphInterface的指针转化为PoseGraph2D
+    // 将生成的CollatedTrajectoryBuilder压入向量列表中
     trajectory_builders_.push_back(
+        // 真正地创建一个TrajectoryBuilder，其中CollatedTrajectoryBuilder继承了接口TrajectoryBuilder
         common::make_unique<CollatedTrajectoryBuilder>(
             sensor_collator_.get(), trajectory_id, expected_sensor_ids,
-            CreateGlobalTrajectoryBuilder2D(
+            CreateGlobalTrajectoryBuilder2D(  // CreateGlobalTrajectoryBuilder2D()函数生成一个TrajectoryBuilderInterface的智能指针
                 std::move(local_trajectory_builder), trajectory_id,
                 static_cast<PoseGraph2D*>(pose_graph_.get()),
                 local_slam_result_callback)));
 
+    /*
+     * 2d的情况需要多处理的情况。
+     * has_overlapping_submaps_trimmer_2d()不知道表示什么意思，
+     * 猜测是说如果两个submap有重叠的部分，则调用pose_graph_中的方法来进行全局优化。
+     * 那3d的情况就不需要处理吗？
+     */
     if (trajectory_options.has_overlapping_submaps_trimmer_2d()) {
       const auto& trimmer_options =
           trajectory_options.overlapping_submaps_trimmer_2d();
@@ -153,19 +193,32 @@ int MapBuilder::AddTrajectoryBuilder(
           trimmer_options.min_added_submaps_count()));
     }
   }
+  /*
+   * 如果是纯定位的情况。
+   * pure_localization()的配置文件在/src/cartographer/configuration_files/trajectory_builder.lua中
+   */
   if (trajectory_options.pure_localization()) {
     constexpr int kSubmapsToKeep = 3;
     pose_graph_->AddTrimmer(common::make_unique<PureLocalizationTrimmer>(
         trajectory_id, kSubmapsToKeep));
   }
+  /*
+   * 如果该轨迹有初始pose；开始一条轨迹前我们是否已知初始位姿。
+   * 这对应的情况就是比如说，我们检测到了一个Landmark。那么这时，我们可以新增加一条trajectory，
+   * 增加新的trajectory时设置has.initial_trajectory_pose为真，
+   * 然后根据机器人与Landmark之间的相对位姿推算机器人相对于世界坐标系的相对位姿。
+   * 以该位姿作为新增加的trajectory的初始位姿。这样情况下，在检测到Landmark时就能有效降低累积误差。
+   */
   if (trajectory_options.has_initial_trajectory_pose()) {
     const auto& initial_trajectory_pose =
         trajectory_options.initial_trajectory_pose();
-    pose_graph_->SetInitialTrajectoryPose(
+    // 调用pose_graph_中的方法，设置初始pose。跟全局相关的事情，都交给pose_graph_来处理。
+    pose_graph_->SetInitialTrajectoryPose(  // 设置初始pose
         trajectory_id, initial_trajectory_pose.to_trajectory_id(),
         transform::ToRigid3(initial_trajectory_pose.relative_pose()),
         common::FromUniversal(initial_trajectory_pose.timestamp()));
   }
+  //将一些跟传感器相关的配置项转成proto流，然后统一放到all_trajectory_builder_options_这个向量列表中
   proto::TrajectoryBuilderOptionsWithSensorIds options_with_sensor_ids_proto;
   for (const auto& sensor_id : expected_sensor_ids) {
     *options_with_sensor_ids_proto.add_sensor_id() = ToProto(sensor_id);
