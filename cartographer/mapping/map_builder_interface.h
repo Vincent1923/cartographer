@@ -39,6 +39,16 @@ namespace mapping {
 // Implementations wire up the complete SLAM stack.
 class MapBuilderInterface {
  public:
+  /*
+   * 这里注意，LocalSlamResultCallback是一个回调函数。
+   * 查看TrajectoryBuilderInterface的定义文件/mapping/trajectory_builder_interface.h:
+   *   using LocalSlamResultCallback =
+   *      std::function<void(int,                                       // trajectory ID
+   *                         common::Time,                              //时间
+   *                         transform::Rigid3d,                        // local pose estimate
+   *                         sensor::RangeData,                         // in local frame
+   *                         std::unique_ptr<const InsertionResult>)>;
+   */
   using LocalSlamResultCallback =
       TrajectoryBuilderInterface::LocalSlamResultCallback;
 
@@ -51,6 +61,7 @@ class MapBuilderInterface {
   MapBuilderInterface& operator=(const MapBuilderInterface&) = delete;
 
   // Creates a new trajectory builder and returns its index.
+  // 创建一个TrajectoryBuilder并返回他的index，即trajectory_id
   virtual int AddTrajectoryBuilder(
       const std::set<SensorId>& expected_sensor_ids,
       const proto::TrajectoryBuilderOptions& trajectory_options,
@@ -58,36 +69,48 @@ class MapBuilderInterface {
 
   // Creates a new trajectory and returns its index. Querying the trajectory
   // builder for it will return 'nullptr'.
+  // Serialization是序列化，Deserialization是反序列化。我们后面补充关于序列化和反序列的知识。
+  // 所以这个函数的作用是从一个序列化的数据中构造出一个trajectory并返回他的index。
   virtual int AddTrajectoryForDeserialization(
-      const proto::TrajectoryBuilderOptionsWithSensorIds&
+      const proto::TrajectoryBuilderOptionsWithSensorIds&  // 只有一个参数，就是序列化的数据
           options_with_sensor_ids_proto) = 0;
 
   // Returns the 'TrajectoryBuilderInterface' corresponding to the specified
   // 'trajectory_id' or 'nullptr' if the trajectory has no corresponding
   // builder.
+  // 根据trajectory_id返回一个TrajectoryBuilderInterface的指针。
+  // 如果该trajectory没有一个TrajectoryBuilder，则返回nullptr。
   virtual mapping::TrajectoryBuilderInterface* GetTrajectoryBuilder(
       int trajectory_id) const = 0;
 
   // Marks the TrajectoryBuilder corresponding to 'trajectory_id' as finished,
   // i.e. no further sensor data is expected.
+  // Finish指定id的trajectory。
   virtual void FinishTrajectory(int trajectory_id) = 0;
 
   // Fills the SubmapQuery::Response corresponding to 'submap_id'. Returns an
   // error string on failure, or an empty string on success.
+  // 根据指定的submap_id来查询submap，把结果放到SubmapQuery::Response中。
+  // 如果出现错误，返回error string; 成功则返回empty string。
   virtual std::string SubmapToProto(const SubmapId& submap_id,
                                     proto::SubmapQuery::Response* response) = 0;
 
   // Serializes the current state to a proto stream.
+  // 序列化当前状态到一个proto流中
   virtual void SerializeState(io::ProtoStreamWriterInterface* writer) = 0;
 
   // Loads the SLAM state from a proto stream.
+  // 从一个proto流中加载SLAM状态
   virtual void LoadState(io::ProtoStreamReaderInterface* reader,
                          bool load_frozen_state) = 0;
 
+  // 返回系统中当前已有的trajectory_builder的数量
   virtual int num_trajectory_builders() const = 0;
 
+  // 返回一个PoseGraphInterface的接口指针。后面我们可以看到，PoseGrapher用来进行Loop Closure。
   virtual mapping::PoseGraphInterface* pose_graph() = 0;
 
+  // 获取所有TrajectoryBuilder的配置项
   virtual const std::vector<proto::TrajectoryBuilderOptionsWithSensorIds>&
   GetAllTrajectoryBuilderOptions() const = 0;
 };
