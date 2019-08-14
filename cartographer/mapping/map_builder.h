@@ -43,7 +43,14 @@ class MapBuilder : public MapBuilderInterface {
   MapBuilder(const MapBuilder &) = delete;
   MapBuilder &operator=(const MapBuilder &) = delete;
 
-  // 创建一个TrajectoryBuilder并返回他的index，即trajectory_id
+  /**
+   * @brief AddTrajectoryBuilder        创建一个TrajectoryBuilder并返回它的index，即trajectory_id
+   * @param expected_sensor_ids         一条trajectory所期望的SensorIds集合，即所有输入的传感器数据topic名字，
+   *                                    SensorId把SensorType和传感器topic名称（类型为std::string）绑定在一起
+   * @param trajectory_options          跟TrajectoryBuilder相关的参数配置
+   * @param local_slam_result_callback  回调函数，类型为std::function
+   * @return
+   */
   int AddTrajectoryBuilder(
       const std::set<SensorId> &expected_sensor_ids,
       const proto::TrajectoryBuilderOptions &trajectory_options,

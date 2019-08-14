@@ -230,21 +230,33 @@ int MapBuilder::AddTrajectoryBuilder(
   return trajectory_id;
 }
 
+// 从序列化的数据中构造一条trajectory
 int MapBuilder::AddTrajectoryForDeserialization(
     const proto::TrajectoryBuilderOptionsWithSensorIds&
         options_with_sensor_ids_proto) {
   const int trajectory_id = trajectory_builders_.size();
+  /*
+   * emplace_back和push_back都是向容器内添加数据。
+   * 对于在容器中添加类的对象时, 相比于push_back,emplace_back可以避免额外类的复制和移动操作。
+   */
   trajectory_builders_.emplace_back();
+  // 配置项的添加
   all_trajectory_builder_options_.push_back(options_with_sensor_ids_proto);
+  // 检查两者大小是否一致
   CHECK_EQ(trajectory_builders_.size(), all_trajectory_builder_options_.size());
   return trajectory_id;
 }
 
+// 结束一条轨迹；可以看到，分别调用sensor_collator和pose_graph_的成员函数来Finish一条轨迹
 void MapBuilder::FinishTrajectory(const int trajectory_id) {
+  // 现阶段猜测，sensor_collator_->FinishTrajectory应该是做的清除对传感器的占用等操作
   sensor_collator_->FinishTrajectory(trajectory_id);
+  // 现阶段猜测，pose_graph_->FinishTrajectory应该是完成对刚刚的trajectory的全局优化
   pose_graph_->FinishTrajectory(trajectory_id);
 }
 
+// 根据指定的submap_id来查询submap，把结果放到SubmapQuery::Response中。
+// 如果出现错误，返回error string; 成功则返回empty string。
 std::string MapBuilder::SubmapToProto(
     const SubmapId& submap_id, proto::SubmapQuery::Response* const response) {
   if (submap_id.trajectory_id < 0 ||
@@ -252,18 +264,21 @@ std::string MapBuilder::SubmapToProto(
     return "Requested submap from trajectory " +
            std::to_string(submap_id.trajectory_id) + " but there are only " +
            std::to_string(num_trajectory_builders()) + " trajectories.";
-  }
+  }  // 指定的submap的id必须合法
 
+  // pose_graph_中应该是维护着一张submap的列表。通过pose_graph_获取指定id的子图。
   const auto submap_data = pose_graph_->GetSubmapData(submap_id);
   if (submap_data.submap == nullptr) {
     return "Requested submap " + std::to_string(submap_id.submap_index) +
            " from trajectory " + std::to_string(submap_id.trajectory_id) +
            " but it does not exist: maybe it has been trimmed.";
-  }
+  }  // 一些子图可能在优化过程中被裁掉
+  // 正常情况下返回数据
   submap_data.submap->ToResponseProto(submap_data.pose, response);
   return "";
 }
 
+// 调用io::WritePbStream工具，保存所有数据
 void MapBuilder::SerializeState(io::ProtoStreamWriterInterface* const writer) {
   io::WritePbStream(*pose_graph_, all_trajectory_builder_options_, writer);
 }
