@@ -32,6 +32,7 @@
 namespace cartographer {
 namespace mapping {
 
+// 参数配置在/src/cartographer/configuration_files/trajectory_builder_2d.lua中
 proto::SubmapsOptions2D CreateSubmapsOptions2D(
     common::LuaParameterDictionary* const parameter_dictionary) {
   proto::SubmapsOptions2D options;
@@ -61,12 +62,14 @@ proto::SubmapsOptions2D CreateSubmapsOptions2D(
   return options;
 }
 
+// 可以看到，在构造2D子图时，Submap的坐标系旋转角度设置为0。而原点由参数origin给出。
 Submap2D::Submap2D(const Eigen::Vector2f& origin, std::unique_ptr<Grid2D> grid)
     : Submap(transform::Rigid3d::Translation(
           Eigen::Vector3d(origin.x(), origin.y(), 0.))) {
   grid_ = std::move(grid);
 }
 
+// 从proto流中构建Submap2D
 Submap2D::Submap2D(const proto::Submap2D& proto)
     : Submap(transform::ToRigid3(proto.local_pose())) {
   if (proto.has_grid()) {
@@ -77,6 +80,7 @@ Submap2D::Submap2D(const proto::Submap2D& proto)
   set_finished(proto.finished());
 }
 
+// 序列化，存到proto中
 void Submap2D::ToProto(proto::Submap* const proto,
                        bool include_probability_grid_data) const {
   auto* const submap_2d = proto->mutable_submap_2d();
@@ -85,10 +89,11 @@ void Submap2D::ToProto(proto::Submap* const proto,
   submap_2d->set_finished(finished());
   if (include_probability_grid_data) {
     CHECK(grid_);
-    *submap_2d->mutable_grid() = grid_->ToProto();
+    *submap_2d->mutable_grid() = grid_->ToProto();  // 调用grid_中的ToProto函数把概率图保存到proto中
   }
 }
 
+// 从proto流中获取Submap2D
 void Submap2D::UpdateFromProto(const proto::Submap& proto) {
   CHECK(proto.has_submap_2d());
   const auto& submap_2d = proto.submap_2d();
@@ -100,6 +105,7 @@ void Submap2D::UpdateFromProto(const proto::Submap& proto) {
   }
 }
 
+// 放到response中
 void Submap2D::ToResponseProto(
     const transform::Rigid3d&,
     proto::SubmapQuery::Response* const response) const {
@@ -113,15 +119,17 @@ void Submap2D::ToResponseProto(
 void Submap2D::InsertRangeData(
     const sensor::RangeData& range_data,
     const RangeDataInserterInterface* range_data_inserter) {
-  CHECK(grid_);
-  CHECK(!finished());
+  CHECK(grid_);  // 检查是否栅格化
+  CHECK(!finished());  // 检查图是否已被finished
+  // 调用RangeDataInserterInterface来更新概率图
   range_data_inserter->Insert(range_data, grid_.get());
-  set_num_range_data(num_range_data() + 1);
+  set_num_range_data(num_range_data() + 1);  // 插入的数据+1
 }
 
 void Submap2D::Finish() {
   CHECK(grid_);
   CHECK(!finished());
+  // 计算裁剪栅格图
   grid_ = grid_->ComputeCroppedGrid();
   set_finished(true);
 }
