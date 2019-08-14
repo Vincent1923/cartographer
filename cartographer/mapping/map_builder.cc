@@ -283,8 +283,10 @@ void MapBuilder::SerializeState(io::ProtoStreamWriterInterface* const writer) {
   io::WritePbStream(*pose_graph_, all_trajectory_builder_options_, writer);
 }
 
+// 从一个proto流中加载SLAM状态
 void MapBuilder::LoadState(io::ProtoStreamReaderInterface* const reader,
                            bool load_frozen_state) {
+  // 反序列化读取工具
   io::ProtoStreamDeserializer deserializer(reader);
 
   // Create a copy of the pose_graph_proto, such that we can re-write the
@@ -293,6 +295,7 @@ void MapBuilder::LoadState(io::ProtoStreamReaderInterface* const reader,
   const auto& all_builder_options_proto =
       deserializer.all_trajectory_builder_options();
 
+  // 逐条trajectory恢复
   std::map<int, int> trajectory_remapping;
   for (auto& trajectory_proto : *pose_graph_proto.mutable_trajectory()) {
     const auto& options_with_sensor_ids_proto =
@@ -311,6 +314,7 @@ void MapBuilder::LoadState(io::ProtoStreamReaderInterface* const reader,
   }
 
   // Apply the calculated remapping to constraints in the pose graph proto.
+  // 恢复trajectory上的节点间的约束关系
   for (auto& constraint_proto : *pose_graph_proto.mutable_constraint()) {
     constraint_proto.mutable_submap_id()->set_trajectory_id(
         trajectory_remapping.at(constraint_proto.submap_id().trajectory_id()));
@@ -318,6 +322,7 @@ void MapBuilder::LoadState(io::ProtoStreamReaderInterface* const reader,
         trajectory_remapping.at(constraint_proto.node_id().trajectory_id()));
   }
 
+  // 恢复Submap
   MapById<SubmapId, transform::Rigid3d> submap_poses;
   for (const proto::Trajectory& trajectory_proto :
        pose_graph_proto.trajectory()) {
@@ -329,6 +334,7 @@ void MapBuilder::LoadState(io::ProtoStreamReaderInterface* const reader,
     }
   }
 
+  // 恢复节点的pose
   MapById<NodeId, transform::Rigid3d> node_poses;
   for (const proto::Trajectory& trajectory_proto :
        pose_graph_proto.trajectory()) {
@@ -340,11 +346,13 @@ void MapBuilder::LoadState(io::ProtoStreamReaderInterface* const reader,
   }
 
   // Set global poses of landmarks.
+  // 设置Landmark
   for (const auto& landmark : pose_graph_proto.landmark_poses()) {
     pose_graph_->SetLandmarkPose(landmark.landmark_id(),
                                  transform::ToRigid3(landmark.global_pose()));
   }
 
+  // 不停读取，直到读完
   SerializedData proto;
   while (deserializer.ReadNextSerializedData(&proto)) {
     switch (proto.data_case()) {
