@@ -54,10 +54,13 @@ common::Time GetTime(const T& t) {
 
 // Uniquely identifies a trajectory node using a combination of a unique
 // trajectory ID and a zero-based index of the node inside that trajectory.
+// 它使用唯一的trajectory ID和该trajectory内的节点的从零开始的索引的组合唯一地识别一个trajectory node
+// trajectory上的一个节点id由两部分组成，一是trajectory_id，另一个是一个非零的trajectory内部的index
 struct NodeId {
-  int trajectory_id;
-  int node_index;
+  int trajectory_id;  // trajectory的id
+  int node_index;     // trajectory内部的节点id
 
+  // 重载等于、不等于、小于等运算符
   bool operator==(const NodeId& other) const {
     return std::forward_as_tuple(trajectory_id, node_index) ==
            std::forward_as_tuple(other.trajectory_id, other.node_index);
@@ -70,6 +73,7 @@ struct NodeId {
            std::forward_as_tuple(other.trajectory_id, other.node_index);
   }
 
+  // 序列化id。proto::NodeId可见/mapping/proto/pose_graph.proto
   void ToProto(proto::NodeId* proto) const {
     proto->set_trajectory_id(trajectory_id);
     proto->set_node_index(node_index);

@@ -43,32 +43,39 @@ struct TrajectoryNodePose {
 
 struct TrajectoryNode {
   struct Data {
-    common::Time time;
+    common::Time time;  // 当前帧的时间
 
     // Transform to approximately gravity align the tracking frame as
     // determined by local SLAM.
+    // 一个表示旋转矩阵的四元数。该旋转矩阵将非水平面的传感器数据投射到水平面上，
+    // 利用IMU的重力传感器可计算出该旋转矩阵。
     Eigen::Quaterniond gravity_alignment;
 
     // Used for loop closure in 2D: voxel filtered returns in the
     // 'gravity_alignment' frame.
+    // 经过水平投射后的点云数据，可用于2D情况下做Loop Closure。
     sensor::PointCloud filtered_gravity_aligned_point_cloud;
 
     // Used for loop closure in 3D.
-    sensor::PointCloud high_resolution_point_cloud;
-    sensor::PointCloud low_resolution_point_cloud;
-    Eigen::VectorXf rotational_scan_matcher_histogram;
+    sensor::PointCloud high_resolution_point_cloud;     // 高分辨率点云
+    sensor::PointCloud low_resolution_point_cloud;      // 低分辨率点云
+    Eigen::VectorXf rotational_scan_matcher_histogram;  // 旋转匹配直方图；VectorXf是一个长度可变的向量。
 
     // The node pose in the local SLAM frame.
+    // 节点在Local SLAM中的Pose
     transform::Rigid3d local_pose;
   };
 
+  // 返回成员变量constant_data的时间
   common::Time time() const { return constant_data->time; }
 
   // This must be a shared_ptr. If the data is used for visualization while the
   // node is being trimmed, it must survive until all use finishes.
+  // 共享指针，允许多个指针指向同一个对象 详见：https://www.cnblogs.com/diysoul/p/5930361.html
   std::shared_ptr<const Data> constant_data;
 
   // The node pose in the global SLAM frame.
+  // 节点在世界坐标系下的位姿
   transform::Rigid3d global_pose;
 };
 
