@@ -41,9 +41,19 @@ proto::SubmapsOptions2D CreateSubmapsOptions2D(
 
 class Submap2D : public Submap {
  public:
+  /**
+   * @brief Submap2D  构造函数
+   * @param origin    原点坐标
+   * @param grid      Grid2D变量，存储栅格化坐标和坐标上的概率值。
+   *                  Grid2D定义在/mapping/2d/grid_2d.h中，继承了GridInterface(/mapping/grid_interface.h)，
+   *                  Grid2D又被ProbabilityGrid继承，定义在/mapping/2d/probability_grid.h中。
+   *                  基本数据都存储在Grid2D的成员变量grid_中。
+   * @return
+   */
   Submap2D(const Eigen::Vector2f& origin, std::unique_ptr<Grid2D> grid);
   explicit Submap2D(const proto::Submap2D& proto);
 
+   // 实现接口Submap中的三个成员函数
   void ToProto(proto::Submap* proto,
                bool include_probability_grid_data) const override;
   void UpdateFromProto(const proto::Submap& proto) override;
@@ -51,16 +61,19 @@ class Submap2D : public Submap {
   void ToResponseProto(const transform::Rigid3d& global_submap_pose,
                        proto::SubmapQuery::Response* response) const override;
 
+  // 返回grid_
   const Grid2D* grid() const { return grid_.get(); }
 
   // Insert 'range_data' into this submap using 'range_data_inserter'. The
   // submap must not be finished yet.
+  // 利用RangeDataInserterInterface来插入并更新概率图。该接口在/mapping/range_data_inserter_interface.h中定义
+  // ProbabilityGridRangeDataInserter2D继承了该接口，定义在/mapping/2d/probability_grid_range_data_inserter_2d.h中
   void InsertRangeData(const sensor::RangeData& range_data,
                        const RangeDataInserterInterface* range_data_inserter);
   void Finish();
 
  private:
-  std::unique_ptr<Grid2D> grid_;
+  std::unique_ptr<Grid2D> grid_;  // 概率图数据存储在这里
 };
 
 // Except during initialization when only a single submap exists, there are
