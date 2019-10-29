@@ -86,9 +86,10 @@ inline std::ostream& operator<<(std::ostream& os, const NodeId& v) {
 
 // Uniquely identifies a submap using a combination of a unique trajectory ID
 // and a zero-based index of the submap inside that trajectory.
+// 使用唯一 trajectory ID 和该 trajectory 内 submap 的从零开始的索引的组合来唯一标识子图。
 struct SubmapId {
-  int trajectory_id;
-  int submap_index;
+  int trajectory_id;  // trajectory ID
+  int submap_index;   // submap 的索引
 
   bool operator==(const SubmapId& other) const {
     return std::forward_as_tuple(trajectory_id, submap_index) ==
