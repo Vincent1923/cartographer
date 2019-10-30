@@ -29,6 +29,7 @@ namespace sensor {
 
 // Stores 3D positions of points.
 // For 2D points, the third entry is 0.f.
+// 存储点的3D位置。对于2D点，第三个元素是0.f。
 typedef std::vector<Eigen::Vector3f> PointCloud;
 
 // Stores 3D positions of points with their relative measurement time in the
