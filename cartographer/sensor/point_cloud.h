@@ -37,7 +37,7 @@ typedef std::vector<Eigen::Vector3f> PointCloud;
 // the last point was acquired. So, the fourth entry for the last point is 0.f.
 // If timing is not available, all fourth entries are 0.f. For 2D points, the
 // third entry is 0.f (and the fourth entry is time).
-// 前三项存储点的3D位置，相对测量时间存储在第四项中。时间以秒为单位，相对于获取最后一点的时间增加。
+// 前三项存储点的3D位置，第四项存储相对测量时间。时间以秒为单位，每一个点和获取最后一点的时间相比较，每一个点的时间逐渐增加。
 // 因此，最后一点的第四项是0.f。如果计时不可用，则所有第四项均为0.f。对于2D点，第三项是0.f（第四项是时间）。
 typedef std::vector<Eigen::Vector4f> TimedPointCloud;
 
