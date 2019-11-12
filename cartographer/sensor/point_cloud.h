@@ -50,7 +50,14 @@ struct PointCloudWithIntensities {
 PointCloud TransformPointCloud(const PointCloud& point_cloud,
                                const transform::Rigid3f& transform);
 
+/**
+ * @brief TransformTimedPointCloud  根据变换矩阵 'transform' 对点云数据 'point_cloud' 进行变换
+ * @param point_cloud               带有时间信息的点云数据
+ * @param transform                 变换矩阵
+ * @return                          经过变换后的点云数据
+ */
 // Transforms 'point_cloud' according to 'transform'.
+// 根据变换矩阵 'transform' 对点云数据 'point_cloud' 进行变换
 TimedPointCloud TransformTimedPointCloud(const TimedPointCloud& point_cloud,
                                          const transform::Rigid3f& transform);
 

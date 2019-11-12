@@ -32,6 +32,7 @@ PointCloud TransformPointCloud(const PointCloud& point_cloud,
   return result;
 }
 
+// 根据变换矩阵 'transform' 对点云数据 'point_cloud' 进行变换
 TimedPointCloud TransformTimedPointCloud(const TimedPointCloud& point_cloud,
                                          const transform::Rigid3f& transform) {
   TimedPointCloud result;
