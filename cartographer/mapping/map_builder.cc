@@ -80,21 +80,25 @@ proto::MapBuilderOptions CreateMapBuilderOptions(
 }
 
 /*
- * MapBuilder的构造函数，基本上要做的就是给MapBuilder的配置项赋值的一些操作，
- * 根据传入的参数option中的配置要设置是2d建图还是3d建图，2d和3d建图要分别设置不同的PoseGraph。
+ * （1）MapBuilder 的构造函数，基本上要做的就是给 MapBuilder 的配置项赋值的一些操作，
+ *     根据传入的参数 option 中的配置要设置是2d建图还是3d建图，2d和3d建图要分别设置不同的 PoseGraph。
+ *     PoseGraph 这个接口应该有两种不同的实现，分别是 PoseGraph2D 和 PoseGraph3D。
+ * （2）配置项 options 的数据类型为 proto::MapBuilderOptions，这是一个 ProtocolBuffer 消息类型，用于做串行化的数据结构信息，
+ *     消息类型定义在“cartographer/cartographer/mapping/proto/map_builder_options.proto”文件中。
+ *     而具体的参数在“cartographer/configuration_files/map_builder.lua”文件中配置。
  */
 MapBuilder::MapBuilder(const proto::MapBuilderOptions& options)
     : options_(options), thread_pool_(options.num_background_threads()) {
   CHECK(options.use_trajectory_builder_2d() ^
         options.use_trajectory_builder_3d());
-  if (options.use_trajectory_builder_2d()) {                                // 设置2d建图
+  if (options.use_trajectory_builder_2d()) {  // 设置2d建图
     pose_graph_ = common::make_unique<PoseGraph2D>(
         options_.pose_graph_options(),
         common::make_unique<optimization::OptimizationProblem2D>(
             options_.pose_graph_options().optimization_problem_options()),
         &thread_pool_);
   }
-  if (options.use_trajectory_builder_3d()) {                                // 设置3d建图
+  if (options.use_trajectory_builder_3d()) {  // 设置3d建图
     pose_graph_ = common::make_unique<PoseGraph3D>(
         options_.pose_graph_options(),
         common::make_unique<optimization::OptimizationProblem3D>(
@@ -102,9 +106,9 @@ MapBuilder::MapBuilder(const proto::MapBuilderOptions& options)
         &thread_pool_);
   }
   /*
-   * sensor_collator_是一个接口sensor::CollatorInterface的智能指针。
-   * 根据options.collate_by_trajectory()的不同，sensor::CollatorInterface有两种不同的实现方式，
-   * 分别是sensor::TrajectoryCollator和sensor::Collator。一般默认是0。
+   * sensor_collator_ 是一个接口 sensor::CollatorInterface 的智能指针。
+   * 根据 options.collate_by_trajectory() 的不同，sensor::CollatorInterface 有两种不同的实现方式，
+   * 分别是 sensor::TrajectoryCollator 和 sensor::Collator。一般默认是0。
    */
   if (options.collate_by_trajectory()) {
     sensor_collator_ = common::make_unique<sensor::TrajectoryCollator>();
