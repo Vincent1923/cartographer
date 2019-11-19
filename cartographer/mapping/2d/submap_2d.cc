@@ -81,51 +81,58 @@ Submap2D::Submap2D(const Eigen::Vector2f& origin, std::unique_ptr<Grid2D> grid)
   grid_ = std::move(grid);
 }
 
-// 从proto流中构建Submap2D
+// 从消息类型为 proto::Submap2D 的 proto 流中构建 Submap2D
+// proto::Submap2D 是一个 ProtocolBuffer 消息类型，消息类型定义在
+// “src/cartographer/cartographer/mapping/proto/submap.proto”文件中。
 Submap2D::Submap2D(const proto::Submap2D& proto)
-    : Submap(transform::ToRigid3(proto.local_pose())) {
+    : Submap(transform::ToRigid3(proto.local_pose())) {  // 设置 local_pose_
   if (proto.has_grid()) {
     CHECK(proto.grid().has_probability_grid_2d());
     grid_ = common::make_unique<ProbabilityGrid>(proto.grid());
   }
-  set_num_range_data(proto.num_range_data());
-  set_finished(proto.finished());
+  set_num_range_data(proto.num_range_data());  // 设置 num_range_data_
+  set_finished(proto.finished());  // 设置 finished_
 }
 
-// 序列化，存到proto中
+// 序列化，存到 proto 中
+// proto::Submap 是一个 ProtocolBuffer 消息类型，消息类型定义在
+// “src/cartographer/cartographer/mapping/proto/submap.proto”文件中，
+// 定义文件里包含 Submap2D 和 Submap3D 两个消息类型。
 void Submap2D::ToProto(proto::Submap* const proto,
                        bool include_probability_grid_data) const {
-  auto* const submap_2d = proto->mutable_submap_2d();
-  *submap_2d->mutable_local_pose() = transform::ToProto(local_pose());
-  submap_2d->set_num_range_data(num_range_data());
-  submap_2d->set_finished(finished());
+  auto* const submap_2d = proto->mutable_submap_2d();  // 返回一个指向 Submap2D 的指针
+  *submap_2d->mutable_local_pose() = transform::ToProto(local_pose());  // 保存 local_pose
+  submap_2d->set_num_range_data(num_range_data());  // 保存 num_range_data
+  submap_2d->set_finished(finished());  // 保存 finished
   if (include_probability_grid_data) {
     CHECK(grid_);
-    *submap_2d->mutable_grid() = grid_->ToProto();  // 调用grid_中的ToProto函数把概率图保存到proto中
+    *submap_2d->mutable_grid() = grid_->ToProto();  // 调用 grid_ 中的 ToProto 函数把概率图保存到 proto 中
   }
 }
 
-// 从proto流中获取Submap2D
+// 从消息类型为 proto::Submap 的 proto 流中获取 Submap2D
 void Submap2D::UpdateFromProto(const proto::Submap& proto) {
-  CHECK(proto.has_submap_2d());
+  CHECK(proto.has_submap_2d());  // 检查 proto 流中是否含有 Submap2D 分量
   const auto& submap_2d = proto.submap_2d();
-  set_num_range_data(submap_2d.num_range_data());
-  set_finished(submap_2d.finished());
+  set_num_range_data(submap_2d.num_range_data());  // 设置 num_range_data_
+  set_finished(submap_2d.finished());  // 设置 finished_
   if (proto.submap_2d().has_grid()) {
     CHECK(proto.submap_2d().grid().has_probability_grid_2d());
     grid_ = common::make_unique<ProbabilityGrid>(submap_2d.grid());
   }
 }
 
-// 放到response中
+// 放到 response 中
+// proto::SubmapQuery::Response 是一个 ProtocolBuffer 消息类型，消息类型定义在
+// “src/cartographer/cartographer/mapping/proto/submap_visualization.proto”文件中。
 void Submap2D::ToResponseProto(
     const transform::Rigid3d&,
     proto::SubmapQuery::Response* const response) const {
   if (!grid_) return;
-  response->set_submap_version(num_range_data());
+  response->set_submap_version(num_range_data());  // 设置 response 中的 submap_version 字段
   proto::SubmapQuery::Response::SubmapTexture* const texture =
       response->add_textures();
-  grid()->DrawToSubmapTexture(texture, local_pose());
+  grid()->DrawToSubmapTexture(texture, local_pose());  // 调用 grid_ 中的 DrawToSubmapTexture 函数设置 response 中的 SubmapTexture 字段
 }
 
 void Submap2D::InsertRangeData(
