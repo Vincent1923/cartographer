@@ -117,7 +117,14 @@ MapBuilder::MapBuilder(const proto::MapBuilderOptions& options)
   }
 }
 
-// 创建一个新的TrajectoryBuilder并返回它的trajectory_id
+/*
+ * （1）创建一个新的 TrajectoryBuilder 并返回它的 trajectory_id。
+ * （2）一个 MapBuilder 的类对应了一次建图过程，在整个建图过程中，用于全局优化的 PoseGraph 的对象只有一个，
+ *     即 pose_graph_，而这个变量是在构造函数中就生成了。在 AddTrajectorybuilder 函数中只需要检查一下
+ *     pose_graph_ 是否符合 PoseGraph2D 或PoseGraph3D 的情况。
+ * （3）而一个 trajectory 对应了机器人运行一圈。在图建好后机器人可能多次运行。每一次运行都是新增一条 trajectory，
+ *     因此，需要动态地维护一个 trajectory 的列表。每生成一个 trajectory 时都是调用 AddTrajectoryBuilder 来创建的。
+ */
 int MapBuilder::AddTrajectoryBuilder(
     const std::set<SensorId>& expected_sensor_ids,
     const proto::TrajectoryBuilderOptions& trajectory_options,
