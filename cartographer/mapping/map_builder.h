@@ -44,11 +44,12 @@ class MapBuilder : public MapBuilderInterface {
   MapBuilder &operator=(const MapBuilder &) = delete;
 
   /**
-   * @brief AddTrajectoryBuilder        创建一个TrajectoryBuilder并返回它的index，即trajectory_id
-   * @param expected_sensor_ids         一条trajectory所期望的SensorIds集合，即所有输入的传感器数据topic名字，
-   *                                    SensorId把SensorType和传感器topic名称（类型为std::string）绑定在一起
-   * @param trajectory_options          跟TrajectoryBuilder相关的参数配置
-   * @param local_slam_result_callback  回调函数，类型为std::function
+   * @brief AddTrajectoryBuilder        创建一个 TrajectoryBuilder 并返回它的 index，即 trajectory_id；
+   *                                    根据传感器 id 和 options 新建一个轨迹线，返回轨迹线的索引。
+   * @param expected_sensor_ids         一条 trajectory 所期望的 SensorIds 集合，即所有输入的传感器数据 topic 名字，
+   *                                    SensorId 把 SensorType 和传感器 topic 名称（类型为std::string）绑定在一起
+   * @param trajectory_options          跟 TrajectoryBuilder 相关的参数配置
+   * @param local_slam_result_callback  回调函数，类型为 std::function
    * @return
    */
   int AddTrajectoryBuilder(
@@ -60,8 +61,10 @@ class MapBuilder : public MapBuilderInterface {
       const proto::TrajectoryBuilderOptionsWithSensorIds
           &options_with_sensor_ids_proto) override;
 
+  // 标记该轨迹已完成 data 采集，后续不再接收 data
   void FinishTrajectory(int trajectory_id) override;
 
+  // 把轨迹 id 和子图索引对应的 submap，序列化到文件
   std::string SubmapToProto(const SubmapId &submap_id,
                             proto::SubmapQuery::Response *response) override;
 
@@ -75,13 +78,13 @@ class MapBuilder : public MapBuilderInterface {
     return pose_graph_.get();  // unique_ptr的get函数可返回被管理对象的指针
   }
 
-  // 返回系统中当前已有的trajectory_builder的数量
+  // 返回系统中当前已有的 trajectory_builder 的数量，即在建图的轨迹数量
   int num_trajectory_builders() const override {
-    return trajectory_builders_.size();  // 向量的size即为TrajectoryBuilder的数量
+    return trajectory_builders_.size();  // 向量的 size 即为 TrajectoryBuilder 的数量
   }
 
-  // 根据trajectory_id返回一个TrajectoryBuilderInterface的指针。
-  // 如果该trajectory没有一个TrajectoryBuilder，则返回nullptr。
+  // 根据轨迹 id trajectory_id 返回一个指向该轨迹的 TrajectoryBuilderInterface 对象指针。
+  // 如果该 trajectory 没有一个 TrajectoryBuilder，则返回 nullptr。
   mapping::TrajectoryBuilderInterface *GetTrajectoryBuilder(
       int trajectory_id) const override {
     return trajectory_builders_.at(trajectory_id).get();  // 从列表中取出指定id的TrajectoryBuilder
@@ -95,14 +98,14 @@ class MapBuilder : public MapBuilderInterface {
 
  private:
   const proto::MapBuilderOptions options_;  // MapBuilder的配置项
-  common::ThreadPool thread_pool_;          // 线程池。个人猜测，应该是为每一条trajectory都单独开辟一个线程
+  common::ThreadPool thread_pool_;          // 线程池。个人猜测，应该是为每一条 trajectory 都单独开辟一个线程
 
   /*
    * MapBuilder维护了一个PoseGraph的智能指针，该指针用来做Loop Closure
    */
   std::unique_ptr<PoseGraph> pose_graph_;
 
-  std::unique_ptr<sensor::CollatorInterface> sensor_collator_;       // 收集传感器数据的智能指针
+  std::unique_ptr<sensor::CollatorInterface> sensor_collator_;  // 收集传感器数据的智能指针
   /*
    * （1）MapBuilder还维护了一个TrajectoryBuilder的向量列表，每一个TrajectoryBuilder对应了机器人运行了一圈。
    *     这个向量列表就管理了整个图中的所有submap。
@@ -113,9 +116,9 @@ class MapBuilder : public MapBuilderInterface {
    *     而PoseGraph是用来进行全局优化，将所有的Submap紧紧tie在一起，构成一个全局的Map，消除误差累积。
    */
   std::vector<std::unique_ptr<mapping::TrajectoryBuilderInterface>>
-      trajectory_builders_;
-  std::vector<proto::TrajectoryBuilderOptionsWithSensorIds>          //与每个TrajectoryBuilderInterface相对应的配置项
-      all_trajectory_builder_options_;
+      trajectory_builders_;  // 轨迹线集合
+  std::vector<proto::TrajectoryBuilderOptionsWithSensorIds>
+      all_trajectory_builder_options_;  //与每个 TrajectoryBuilderInterface 相对应的配置项
 };
 
 }  // namespace mapping
