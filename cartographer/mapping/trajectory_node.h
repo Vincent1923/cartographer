@@ -53,20 +53,21 @@ struct TrajectoryNode {
 
     // Used for loop closure in 2D: voxel filtered returns in the
     // 'gravity_alignment' frame.
-    // 经过水平投射后的点云数据，可用于2D情况下做Loop Closure。
+    // 用于 2D loop closure：“gravity_alignment”坐标系下经过体素滤波后的返回（结果）。
+    // 经过水平投射后的点云数据，可用于 2D 情况下做 Loop Closure。
     sensor::PointCloud filtered_gravity_aligned_point_cloud;
 
     // Used for loop closure in 3D.
     sensor::PointCloud high_resolution_point_cloud;     // 高分辨率点云
     sensor::PointCloud low_resolution_point_cloud;      // 低分辨率点云
-    Eigen::VectorXf rotational_scan_matcher_histogram;  // 旋转匹配直方图；VectorXf是一个长度可变的向量。
+    Eigen::VectorXf rotational_scan_matcher_histogram;  // 旋转匹配直方图；VectorXf 是一个长度可变的向量。
 
     // The node pose in the local SLAM frame.
-    // 节点在Local SLAM中的Pose
+    // 节点在 Local SLAM 中的 Pose
     transform::Rigid3d local_pose;
   };
 
-  // 返回成员变量constant_data的时间
+  // 返回成员变量 constant_data 的时间
   common::Time time() const { return constant_data->time; }
 
   // This must be a shared_ptr. If the data is used for visualization while the
