@@ -32,12 +32,23 @@
 namespace cartographer {
 namespace mapping {
 
-// 参数配置在/src/cartographer/configuration_files/trajectory_builder_2d.lua中
+/*
+ * （1）CreateSubmapsOptions2D()函数的功能为获取 submaps 的配置参数。
+ * （2）proto::SubmapsOptions2D 是一个 ProtocolBuffer 消息类型，消息类型定义在
+ *     “src/cartographer/cartographer/mapping/proto/2d/submaps_options_2d.proto”文件中。
+ * （3）参数配置在“/src/cartographer/configuration_files/trajectory_builder_2d.lua”文件中。
+ */
 proto::SubmapsOptions2D CreateSubmapsOptions2D(
     common::LuaParameterDictionary* const parameter_dictionary) {
   proto::SubmapsOptions2D options;
+  // num_range_data 主要配置submaps的尺寸，2d 构图的默认设置为90。
+  // 添加一个新的submap之前的测距仪数据的数量。每个submap将获得插入的测距仪数据的两倍数量：首先进行初始化而不匹配，然后进行匹配。
+  // 这个参数主要配置submaps的尺寸，在调试的时候：一方面，submaps必须足够小，这样它们内部的偏移就会低于分辨率，因此它们在局部是正确的；
+  // 另一方面，它应该足够大，保证闭环能够正常工作。
   options.set_num_range_data(
       parameter_dictionary->GetNonNegativeInt("num_range_data"));
+  // grid_options_2d 主要配置栅格地图的选项。
+  // 其中，grid_type 默认为“PROBABILITY_GRID”；而 resolution 为地图的分辨率，以米为单位，默认为0.05。
   *options.mutable_grid_options_2d() = CreateGridOptions2D(
       parameter_dictionary->GetDictionary("grid_options_2d").get());
   *options.mutable_range_data_inserter_options() =
@@ -45,11 +56,12 @@ proto::SubmapsOptions2D CreateSubmapsOptions2D(
           parameter_dictionary->GetDictionary("range_data_inserter").get());
 
   bool valid_range_data_inserter_grid_combination = false;
-  const proto::GridOptions2D_GridType& grid_type =
+  const proto::GridOptions2D_GridType& grid_type =  // 获取 grid_type，一般为"PROBABILITY_GRID"
       options.grid_options_2d().grid_type();
   const proto::RangeDataInserterOptions_RangeDataInserterType&
-      range_data_inserter_type =
+      range_data_inserter_type =  // 获取 range_data_inserter_type，一般为"PROBABILITY_GRID_INSERTER_2D"
           options.range_data_inserter_options().range_data_inserter_type();
+  // 判断 grid_type 是否为"PROBABILITY_GRID"，以及 range_data_inserter_type 是否为"PROBABILITY_GRID_INSERTER_2D"
   if (grid_type == proto::GridOptions2D::PROBABILITY_GRID &&
       range_data_inserter_type ==
           proto::RangeDataInserterOptions::PROBABILITY_GRID_INSERTER_2D) {
