@@ -56,13 +56,17 @@ inline uint8 ProbabilityToLogOddsInteger(const float probability) {
 // track of how many range data were inserted into it, and sets the
 // 'finished_probability_grid' to be used for loop closing once the map no
 // longer changes.
-// 一个子图，首先要有一个local_pose。这个local_pose可以看做是没有经过全局优化的该submap相对
-// 于世界坐标系的位姿。
-// 一张子图要不停地监视有多少range data（这里的range data我理解的就是点云）被插入到这个submap
-// 中。当没有range data插入时，则设置成员变量finished_为真，然后开始做Loop Closure。
+// 单个 submap，在 local map 坐标系中具有'local_pose'，跟踪有多少测距仪数据（range data）插入其中，
+// 并设置'finished_probability_grid'以在地图不再更改时用于 loop closing。
+/*
+ * （1）一个子图，首先要有一个 local_pose。这个 local_pose 可以看做是没有经过全局优化的
+ *     该 submap 相对于世界坐标系的位姿。
+ * （2）一张子图要不停地监视有多少 range data（这里的 range data 我理解的就是点云）被插入到这个 submap 中。
+ *     当没有 range data 插入时，则设置成员变量 finished_ 为真，然后开始做 Loop Closure。
+ */
 class Submap {
  public:
-  // 构造函数，只包括一个local_pose
+  // 构造函数，只包括一个 local_pose
   Submap(const transform::Rigid3d& local_submap_pose)
       : local_pose_(local_submap_pose) {}
   virtual ~Submap() {}
@@ -74,17 +78,17 @@ class Submap {
   virtual void UpdateFromProto(const proto::Submap& proto) = 0;
 
   // Fills data into the 'response'.
-  // 把submap的放入到response的proto流中。方便service中查询submap讯息。
+  // 把 submap 的放入到 response 的 proto 流中。方便 service 中查询 submap 讯息。
   virtual void ToResponseProto(
       const transform::Rigid3d& global_submap_pose,
       proto::SubmapQuery::Response* response) const = 0;
 
   // Pose of this submap in the local map frame.
-  // 返回成员变量local_pose_，即该submap的位姿。
+  // 返回成员变量 local_pose_，即该 submap 的位姿。
   transform::Rigid3d local_pose() const { return local_pose_; }
 
   // Number of RangeData inserted.
-  // 返回成员变量num_range_data_，即插入到该Submap中的range data的数量。
+  // 返回成员变量 num_range_data_，即插入到该 Submap 中的 range data 的数量。
   int num_range_data() const { return num_range_data_; }
   // 设置成员变量num_range_data_
   void set_num_range_data(const int num_range_data) {
@@ -92,7 +96,7 @@ class Submap {
   }
 
   // Whether the submap is finished or not.
-  // 查看布尔型成员变量finished_，即该子图是否还需要更新。
+  // 查看布尔型成员变量 finished_，即该子图是否还需要更新。
   bool finished() const { return finished_; }
   void set_finished(bool finished) { finished_ = finished; }
 
