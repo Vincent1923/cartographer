@@ -33,14 +33,16 @@ proto::GridOptions2D CreateGridOptions2D(
   return options;
 }
 
+// 构造函数
 Grid2D::Grid2D(const MapLimits& limits, float min_correspondence_cost,
                float max_correspondence_cost)
-    : limits_(limits),
-      correspondence_cost_cells_(
-          limits_.cell_limits().num_x_cells * limits_.cell_limits().num_y_cells,
-          kUnknownCorrespondenceValue),
-      min_correspondence_cost_(min_correspondence_cost),
-      max_correspondence_cost_(max_correspondence_cost) {
+    : limits_(limits),  // 初始化地图范围 limits_
+      correspondence_cost_cells_(  // 初始化地图的概率值，根据 cells 的大小生成一维向量
+          limits_.cell_limits().num_x_cells * limits_.cell_limits().num_y_cells,  // 地图的 size 大小，根据 limits_ 的成员 cell_limits_ 计算
+          kUnknownCorrespondenceValue),                                           // 每个单元格的概率值为 kUnknownCorrespondenceValue，默认为0
+      min_correspondence_cost_(min_correspondence_cost),   // 初始化 min_correspondence_cost_
+      max_correspondence_cost_(max_correspondence_cost) {  // 初始化 max_correspondence_cost_
+      // 检查 min_correspondence_cost_ 是否小于 max_correspondence_cost_，即检查最小值是否小于最大值
   CHECK_LT(min_correspondence_cost_, max_correspondence_cost_);
 }
 
