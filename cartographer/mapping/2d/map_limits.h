@@ -40,14 +40,27 @@ namespace mapping {
 // 定义栅格地图（grid map）的限制，出于性能原因，该类必须保持内联
 class MapLimits {
  public:
+  /**
+   * @brief MapLimits    构造函数，主要是初始化成员变量
+   * @param resolution   地图分辨率，程序中设置是0.05m，也就是5cm
+   * @param max          这是一个浮点型二维向量，max_.x()和.y()分别表示x、y方向的最大值
+   * @param cell_limits  栅格化后的 x 和 y 方向的最大范围，以 pixel 为单位
+   * @return
+   */
   MapLimits(const double resolution, const Eigen::Vector2d& max,
             const CellLimits& cell_limits)
       : resolution_(resolution), max_(max), cell_limits_(cell_limits) {
-    CHECK_GT(resolution_, 0.);
-    CHECK_GT(cell_limits.num_x_cells, 0.);
-    CHECK_GT(cell_limits.num_y_cells, 0.);
+    CHECK_GT(resolution_, 0.);              // 检查 resolution_ 是否大于0
+    CHECK_GT(cell_limits.num_x_cells, 0.);  // 检查 cell_limits.num_x_cells 是否大于0
+    CHECK_GT(cell_limits.num_y_cells, 0.);  // 检查 cell_limits.num_y_cells 是否大于0
   }
 
+  /**
+   * @brief MapLimits   构造函数，从 proto 流中构造地图范围，主要是初始化成员变量
+   * @param map_limits  地图范围，数据类型为 proto::MapLimits，这是一个 ProtocolBuffer 消息类型，消息类型定义在
+   *                    “src/cartographer/cartographer/mapping/proto/2d/map_limits.proto”文件中。
+   * @return
+   */
   explicit MapLimits(const proto::MapLimits& map_limits)
       : resolution_(map_limits.resolution()),
         max_(transform::ToEigen(map_limits.max())),
