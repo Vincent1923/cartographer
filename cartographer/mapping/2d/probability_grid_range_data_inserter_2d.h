@@ -32,6 +32,7 @@
 namespace cartographer {
 namespace mapping {
 
+// 加载配置项，设置了 hit_probability(0.55) 和 miss_probability(0.49) 的具体数值
 proto::ProbabilityGridRangeDataInserterOptions2D
 CreateProbabilityGridRangeDataInserterOptions2D(
     common::LuaParameterDictionary* parameter_dictionary);
@@ -47,6 +48,7 @@ class ProbabilityGridRangeDataInserter2D : public RangeDataInserterInterface {
       const ProbabilityGridRangeDataInserter2D&) = delete;
 
   // Inserts 'range_data' into 'probability_grid'.
+  // 向栅格化地图中插入传感器数据
   virtual void Insert(const sensor::RangeData& range_data,
                       GridInterface* grid) const override;
 
