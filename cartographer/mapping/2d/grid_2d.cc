@@ -46,6 +46,7 @@ Grid2D::Grid2D(const MapLimits& limits, float min_correspondence_cost,
   CHECK_LT(min_correspondence_cost_, max_correspondence_cost_);
 }
 
+// 从 proto 流中恢复 Grid2D
 Grid2D::Grid2D(const proto::Grid2D& proto)
     : limits_(proto.limits()), correspondence_cost_cells_() {
   if (proto.has_known_cells_box()) {
@@ -75,8 +76,11 @@ Grid2D::Grid2D(const proto::Grid2D& proto)
 }
 
 // Finishes the update sequence.
+// 停止更新
 void Grid2D::FinishUpdate() {
-  while (!update_indices_.empty()) {
+  while (!update_indices_.empty()) {  // 如果索引值列表不为空
+    // 检查该索引值中的 Correspondence 是否大于等于 kUpdateMarker
+    // kUpdateMarker 等值都定义在 /mapping/probability_values.h 中
     DCHECK_GE(correspondence_cost_cells_[update_indices_.back()],
               kUpdateMarker);
     correspondence_cost_cells_[update_indices_.back()] -= kUpdateMarker;
@@ -85,14 +89,18 @@ void Grid2D::FinishUpdate() {
 }
 
 // Returns the correspondence cost of the cell with 'cell_index'.
+// 返回指定 pixel 坐标的 CorrespondenceCost 值
 float Grid2D::GetCorrespondenceCost(const Eigen::Array2i& cell_index) const {
   if (!limits().Contains(cell_index)) return kMaxCorrespondenceCost;
+  // 这些函数都定义在 /mapping/probability_values.h 中
   return ValueToCorrespondenceCost(
-      correspondence_cost_cells()[ToFlatIndex(cell_index)]);
+      correspondence_cost_cells()[ToFlatIndex(cell_index)]);  // ToFlatIndex 将一个二维坐标转化为一维的索引值
 }
 
 // Returns true if the correspondence cost at the specified index is known.
+// 判断一个指定坐标是否已经有概率值
 bool Grid2D::IsKnown(const Eigen::Array2i& cell_index) const {
+  // kUnknownCorrespondenceValue = 0
   return limits_.Contains(cell_index) &&
          correspondence_cost_cells_[ToFlatIndex(cell_index)] !=
              kUnknownCorrespondenceValue;
@@ -100,6 +108,7 @@ bool Grid2D::IsKnown(const Eigen::Array2i& cell_index) const {
 
 // Fills in 'offset' and 'limits' to define a subregion of that contains all
 // known cells.
+// 圈出来一个子区域
 void Grid2D::ComputeCroppedLimits(Eigen::Array2i* const offset,
                                   CellLimits* const limits) const {
   if (known_cells_box_.isEmpty()) {
@@ -115,6 +124,7 @@ void Grid2D::ComputeCroppedLimits(Eigen::Array2i* const offset,
 // Grows the map as necessary to include 'point'. This changes the meaning of
 // these coordinates going forward. This method must be called immediately
 // after 'FinishUpdate', before any calls to 'ApplyLookupTable'.
+// 增长子图
 void Grid2D::GrowLimits(const Eigen::Vector2f& point) {
   CHECK(update_indices_.empty());
   while (!limits_.Contains(limits_.GetCellIndex(point))) {
@@ -167,6 +177,7 @@ proto::Grid2D Grid2D::ToProto() const {
   return result;
 }
 
+// 将一个二维坐标转化为一维的索引值
 int Grid2D::ToFlatIndex(const Eigen::Array2i& cell_index) const {
   CHECK(limits_.Contains(cell_index)) << cell_index;
   return limits_.cell_limits().num_x_cells * cell_index.y() + cell_index.x();
