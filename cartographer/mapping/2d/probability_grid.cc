@@ -52,15 +52,23 @@ void ProbabilityGrid::SetProbability(const Eigen::Array2i& cell_index,
 // will be set to probability corresponding to 'odds'.
 bool ProbabilityGrid::ApplyLookupTable(const Eigen::Array2i& cell_index,
                                        const std::vector<uint16>& table) {
+  // 检查 table 的 size 是否等于一个微小元
+  // kUpdateMarker 等于2的15次方
   DCHECK_EQ(table.size(), kUpdateMarker);
-  const int flat_index = ToFlatIndex(cell_index);
-  uint16* cell = &(*mutable_correspondence_cost_cells())[flat_index];
+  const int flat_index = ToFlatIndex(cell_index);  // 把 pixel 坐标转化为一维索引值
+  // mutable_correspondence_cost_cells() 是 Grid2D 的成员函数，返回存放概率值的一维向量
+  // 根据 cell 坐标，返回该 cell 中原本的 value 值
+  uint16* cell = &(*mutable_correspondence_cost_cells())[flat_index];  // 根据索引值求该 cell 的值
   if (*cell >= kUpdateMarker) {
     return false;
   }
+  // 已更新的信息都存储在 update_indices_ 这个向量中，所以该 cell 被处理过后它的 index 要加入到这个向量中
   mutable_update_indices()->push_back(flat_index);
+  // 根据该 pixel 返回的值 cell 来查表，获取更新后应该是什么值。然后把这个值放入到 cell 原先的地址中。实际就是更新该值
   *cell = table[*cell];
   DCHECK_GE(*cell, kUpdateMarker);
+  // mutable_known_cells_box() 是 Grid2D 的成员函数，返回存放已知概率值的一个子区域的盒子。
+  // 现在就是把该 cell 放入已知概率值的盒子中
   mutable_known_cells_box()->extend(cell_index.matrix());
   return true;
 }
