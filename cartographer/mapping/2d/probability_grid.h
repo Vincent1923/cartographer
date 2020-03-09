@@ -35,6 +35,8 @@ class ProbabilityGrid : public Grid2D {
 
   // Sets the probability of the cell at 'cell_index' to the given
   // 'probability'. Only allowed if the cell was unknown before.
+  // 将单元格在 “cell_index” 处的概率设置为给定的 “probability”。只有在单元格之前未知的情况下才允许。
+  // 设置一个给定 pixel 坐标的概率值
   void SetProbability(const Eigen::Array2i& cell_index,
                       const float probability);
 
@@ -49,6 +51,7 @@ class ProbabilityGrid : public Grid2D {
                         const std::vector<uint16>& table);
 
   // Returns the probability of the cell with 'cell_index'.
+  // 得到一个指定坐标 "cell_index" 的概率值
   float GetProbability(const Eigen::Array2i& cell_index) const;
 
   virtual proto::Grid2D ToProto() const override;
