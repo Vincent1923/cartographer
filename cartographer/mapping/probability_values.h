@@ -79,6 +79,7 @@ inline float ClampCorrespondenceCost(const float correspondence_cost) {
 
 constexpr uint16 kUnknownProbabilityValue = 0;
 constexpr uint16 kUnknownCorrespondenceValue = kUnknownProbabilityValue;
+// 运算符 << 是左移，左移一位当于乘以2，所以这里 kUpdateMarker 等于2的15次方
 constexpr uint16 kUpdateMarker = 1u << 15;
 
 // Converts a correspondence_cost to a uint16 in the [1, 32767] range.
