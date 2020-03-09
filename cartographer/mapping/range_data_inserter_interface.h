@@ -27,12 +27,17 @@
 namespace cartographer {
 namespace mapping {
 
+// 加载一下配置项，比如 range_data_inserter_type 等。
+// 这些配置定义在 /src/cartographer/configuration_files/trajectory_builder_2d.lua
 proto::RangeDataInserterOptions CreateRangeDataInserterOptions(
     common::LuaParameterDictionary* const parameter_dictionary);
 
 class RangeDataInserterInterface {
  public:
   // Inserts 'range_data' into 'grid'.
+  // RangeDataInserterInterface 的核心就是定义了一个虚函数：
+  // Insert(const sensor::RangeData& range_data, GridInterface* grid)。
+  // 其主要功能就是向栅格化地图中插入传感器数据。
   virtual void Insert(const sensor::RangeData& range_data,
                       GridInterface* grid) const = 0;
 };
