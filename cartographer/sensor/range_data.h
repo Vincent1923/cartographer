@@ -31,6 +31,11 @@ namespace sensor {
 // between the 'origin' and 'misses' is free space.
 // 光线以“origin”开始。“returns”是检测到障碍物的点。“misses”是在光线方向上未检测到返回的点，并以配置的距离插入。
 // 假定“origin”和“misses”之间是自由空间。
+// origin 是一个3维向量，表示的是这一帧数据的原点。
+// returns 是那些检测到了 hits 的点，那么被 Hits 的点加入 hits 这个集合，相应地更改 submap 中的信息。
+// 而 origin 和 hits 中间的点也是 Free 的，需要归入到 misses 集合中。
+// misses 是那些没有检测到 return 的点，原点和 misses 形成的射线上的所有点都是 free Space，都需要归入 misses 集合中。
+// 上述所有的点的表示里，如果是 2d 情况的话，第三个元素是0。
 struct RangeData {
   Eigen::Vector3f origin;
   PointCloud returns;
