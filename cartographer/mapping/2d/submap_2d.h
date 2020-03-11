@@ -80,11 +80,24 @@ class Submap2D : public Submap {
 // always two submaps into which range data is inserted: an old submap that is
 // used for matching, and a new one, which will be used for matching next, that
 // is being initialized.
+// 除了在初始化期间只有一个 submap 存在的情况之外，range data 总是会插入到两个 submap 中：
+// 一个用于匹配的旧 submap，另一个正在初始化，用于接下来要匹配的新 submap。
 //
 // Once a certain number of range data have been inserted, the new submap is
 // considered initialized: the old submap is no longer changed, the "new" submap
 // is now the "old" submap and is used for scan-to-map matching. Moreover, a
 // "new" submap gets created. The "old" submap is forgotten by this object.
+// 一旦插入一定数量的 range data，就将新 submap 视为已初始化：旧 submap 不再更改，
+// “新”submap 现在是“旧”submap，并用于 scan-to-map 匹配。
+// 此外，将创建一个“新”submap。该对象会遗忘掉“旧”submap。
+//
+// 在 cartographer 中总是同时存在着两个 Submap：Old Submap 和 New Submap。
+// Old Submap 是用来做 matching，New submap 则用来 matching next。
+// 每一帧 RangeData 数据都要同时插入到两个 submap 中。当插入 Old Submap 中的传感器帧数达到一定数量
+// （在配置文件/src/cartographer/configuration_files/trajectory_builder_2d.lua中设置-submap/num_range_data）时，
+// Old submap 就不再改变，这时 Old Submap 开始进行 Loop Closure，被加入到 submap 的 list 中，
+// 设置 matching_submap_index 增加1，然后被 ActiveSubmap 这个 object 所遗忘，
+// 而原先的 New submap 则变成新的 Old Submap，同时通过 AddSubmap 函数重新初始化一个 submap。
 class ActiveSubmaps2D {
  public:
   explicit ActiveSubmaps2D(const proto::SubmapsOptions2D& options);
@@ -94,9 +107,11 @@ class ActiveSubmaps2D {
 
   // Returns the index of the newest initialized Submap which can be
   // used for scan-to-map matching.
+  // 返回正在执行 scan-to-map matching 的 submap 的 index
   int matching_index() const;
 
   // Inserts 'range_data' into the Submap collection.
+  // 插入传感器数据
   void InsertRangeData(const sensor::RangeData& range_data);
 
   std::vector<std::shared_ptr<Submap2D>> submaps() const;
