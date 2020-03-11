@@ -158,6 +158,8 @@ ActiveSubmaps2D::ActiveSubmaps2D(const proto::SubmapsOptions2D& options)
       range_data_inserter_(std::move(CreateRangeDataInserter())) {
   // We always want to have at least one likelihood field which we can return,
   // and will create it at the origin in absence of a better choice.
+  // 我们总是希望至少有一个可以返回的似然字段，并在没有更好选择的情况下在原点创建它。
+  // 新的 submap 如果没有更好选择，不妨设置 original 为[0,0]
   AddSubmap(Eigen::Vector2f::Zero());
 }
 
@@ -171,6 +173,7 @@ void ActiveSubmaps2D::InsertRangeData(const sensor::RangeData& range_data) {
   for (auto& submap : submaps_) {
     submap->InsertRangeData(range_data, range_data_inserter_.get());
   }
+  // 如果插入的 RangeData 达到一定数量，则重新添加一个 submap
   if (submaps_.back()->num_range_data() == options_.num_range_data()) {
     AddSubmap(range_data.origin.head<2>());
   }
@@ -195,13 +198,14 @@ std::unique_ptr<GridInterface> ActiveSubmaps2D::CreateGrid(
 }
 
 void ActiveSubmaps2D::FinishSubmap() {
-  Submap2D* submap = submaps_.front().get();
-  submap->Finish();
-  ++matching_submap_index_;
-  submaps_.erase(submaps_.begin());
+  Submap2D* submap = submaps_.front().get();  // 把前面的 submap 取出来
+  submap->Finish();  // 让它 finish
+  ++matching_submap_index_;  // 正在匹配的 submap 的 index 指向新的 submap
+  submaps_.erase(submaps_.begin());  // 把开头的 submap 删去
 }
 
 void ActiveSubmaps2D::AddSubmap(const Eigen::Vector2f& origin) {
+  //如果 submap_ 的 size 不大于1，说明刚开始创建第一个 submap，不用做任何操作，直接把新的添加进去。否则，要把旧的给 finish 掉
   if (submaps_.size() > 1) {
     // This will crop the finished Submap before inserting a new Submap to
     // reduce peak memory usage a bit.

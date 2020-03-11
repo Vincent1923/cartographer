@@ -111,6 +111,7 @@ class ActiveSubmaps2D {
   int matching_index() const;
 
   // Inserts 'range_data' into the Submap collection.
+  // 将“range_data”插入 Submap 集合
   // 插入传感器数据
   void InsertRangeData(const sensor::RangeData& range_data);
 
