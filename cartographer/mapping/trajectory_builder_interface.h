@@ -69,24 +69,29 @@ class TrajectoryBuilderInterface {
   // A callback which is called after local SLAM processes an accumulated
   // 'sensor::RangeData'. If the data was inserted into a submap, reports the
   // assigned 'NodeId', otherwise 'nullptr' if the data was filtered out.
+  // 这个回调函数是当一个 RangeData 数据进来时被调用，主要有5个参数：trajectory_id，
+  // 该帧数据的插入时刻 Time, 插入到 Local Slam 中的 pose，RangeData 数据本身和插入的结果 InsertionResult。
+  // InsertionResult 的结构我们进行了详细地分析。
+  // 如果该帧数据成功插入了 submap 中则返回节点 id:NodeId，否则返回空指针
   using LocalSlamResultCallback =
       std::function<void(int /* trajectory ID */, common::Time,
                          transform::Rigid3d /* local pose estimate */,
                          sensor::RangeData /* in local frame */,
                          std::unique_ptr<const InsertionResult>)>;
 
+  // 定义传感器类型的结构体
   struct SensorId {
     enum class SensorType {
-      RANGE = 0,
-      IMU,
-      ODOMETRY,
+      RANGE = 0,         // Range 传感器。激光或其他可提供点云数据的传感器，如 Kinect。
+      IMU,               // IMU 数据
+      ODOMETRY,          // 里程计
       FIXED_FRAME_POSE,
       LANDMARK,
       LOCAL_SLAM_RESULT
     };
 
-    SensorType type;
-    std::string id;
+    SensorType type;  // 传感器类型
+    std::string id;   // 传感器 id
 
     bool operator==(const SensorId& other) const {
       return std::forward_as_tuple(type, id) ==
@@ -99,13 +104,16 @@ class TrajectoryBuilderInterface {
     }
   };
 
+  // 构造函数
   TrajectoryBuilderInterface() {}
   virtual ~TrajectoryBuilderInterface() {}
 
+  // 等号重载
   TrajectoryBuilderInterface(const TrajectoryBuilderInterface&) = delete;
   TrajectoryBuilderInterface& operator=(const TrajectoryBuilderInterface&) =
       delete;
 
+  // 处理传感器数据的5个纯虚函数
   virtual void AddSensorData(
       const std::string& sensor_id,
       const sensor::TimedPointCloudData& timed_point_cloud_data) = 0;
@@ -121,6 +129,9 @@ class TrajectoryBuilderInterface {
   // Allows to directly add local SLAM results to the 'PoseGraph'. Note that it
   // is invalid to add local SLAM results for a trajectory that has a
   // 'LocalTrajectoryBuilder2D/3D'.
+  // 允许直接将本地 SLAM 结果添加到“PoseGraph”中。请注意，为具有“LocalTrajectoryBuilder2D/3D”
+  // 的轨迹添加本地 SLAM 结果是无效的。
+  // 直接将 Local Slam 的结果添加到 PoseGraph 的函数
   virtual void AddLocalSlamResultData(
       std::unique_ptr<mapping::LocalSlamResultData> local_slam_result_data) = 0;
 };
