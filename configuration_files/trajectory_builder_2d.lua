@@ -54,9 +54,9 @@ TRAJECTORY_BUILDER_2D = {
   },
 
   motion_filter = {
-    max_time_seconds = 5.,  // 5s
-    max_distance_meters = 0.2,  // 0.2米
-    max_angle_radians = math.rad(1.),  // 1度
+    max_time_seconds = 5.,  -- 5s
+    max_distance_meters = 0.2,  -- 0.2米
+    max_angle_radians = math.rad(1.),  -- 1度
   },
 
   imu_gravity_time_constant = 10.,
