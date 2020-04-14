@@ -45,12 +45,14 @@ namespace mapping {
  */
 class PoseExtrapolator {
  public:
+  // 构造函数
   explicit PoseExtrapolator(common::Duration pose_queue_duration,
                             double imu_gravity_time_constant);
 
   PoseExtrapolator(const PoseExtrapolator&) = delete;
   PoseExtrapolator& operator=(const PoseExtrapolator&) = delete;
 
+  // 根据 IMU 数据来初始化一个 PoseExtrapolator
   static std::unique_ptr<PoseExtrapolator> InitializeWithImu(
       common::Duration pose_queue_duration, double imu_gravity_time_constant,
       const sensor::ImuData& imu_data);
@@ -60,7 +62,9 @@ class PoseExtrapolator {
   common::Time GetLastPoseTime() const;
   common::Time GetLastExtrapolatedTime() const;
 
+  // 在时刻 time 往 Pose 队列中添加一个 Pose
   void AddPose(common::Time time, const transform::Rigid3d& pose);
+  // 把新的 IMU 数据添加到队列中，删去队列中的过期数据
   void AddImuData(const sensor::ImuData& imu_data);
   void AddOdometryData(const sensor::OdometryData& odometry_data);
   transform::Rigid3d ExtrapolatePose(common::Time time);
@@ -69,9 +73,13 @@ class PoseExtrapolator {
   Eigen::Quaterniond EstimateGravityOrientation(common::Time time);
 
  private:
+  // 从一个 Pose 队列中估计机器人的线速度和角速度
   void UpdateVelocitiesFromPoses();
+  // 删去队列中无用的 IMU 数据
   void TrimImuData();
+  // 删去队列中无用的里程计数据
   void TrimOdometryData();
+  // 从 IMU 数据队列中取出最新的数据，更新 ImuTracker 的状态到指定的时间 time
   void AdvanceImuTracker(common::Time time, ImuTracker* imu_tracker) const;
   Eigen::Quaterniond ExtrapolateRotation(common::Time time,
                                          ImuTracker* imu_tracker) const;
