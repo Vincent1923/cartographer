@@ -49,17 +49,18 @@ class LocalSlamResultData;
 // 以及用于计算优化后的位姿估计的稀疏位姿图优化。
 class TrajectoryBuilderInterface {
  public:
-  // InsertionResult就是用来保存插入Local Slam的一个节点的数据结构
+  // InsertionResult 就是用来保存插入 Local Slam 的一个节点的数据结构
   struct InsertionResult {
     /*
-     * NodeId是一个结构体，在/mapping/id.h中定义，
-     * 包含两个部分：一个int型的trajectory_id和一个int型的node_index，
-     * 它使用唯一的trajectory ID和该trajectory内的节点的从零开始的索引的组合唯一地识别一个trajectory node。
+     * NodeId 是一个结构体，这个结构体应该是用来存储一帧激光数据插入到 submap 中的结果的。
+     * 在插入时，会为该帧数据分配一个 NodeId，NodeId 定义在“/mapping/id.h”中。
+     * 包含两个部分：一个 int 型的 trajectory_id 和一个 int 型的 node_index，
+     * 它使用唯一的 trajectory ID 和该 trajectory 内节点的从零开始的索引 node_index 的组合唯一地识别一个 trajectory node。
      */
     NodeId node_id;
     /*
-     * TrajectoryNode是一个结构体，在/mapping/trajectory_node.h中定义，
-     * TrajectoryNode::Data包含了经过处理的一帧传感器数据。
+     * TrajectoryNode 是一个结构体，在“/mapping/trajectory_node.h”中定义，
+     * TrajectoryNode::Data 包含了经过处理的一帧传感器数据。
      */
     std::shared_ptr<const TrajectoryNode::Data> constant_data;
     // 已经建立起来的子图列表

@@ -42,6 +42,7 @@ struct TrajectoryNodePose {
 };
 
 struct TrajectoryNode {
+  // TrajectoryNode::Data 是存储这个节点时的状态，包括时间、传感器数据等信息。
   struct Data {
     common::Time time;  // 当前帧的时间
 
