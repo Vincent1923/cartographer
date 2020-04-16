@@ -49,6 +49,8 @@ CreateProbabilityGridRangeDataInserterOptions2D(
 ProbabilityGridRangeDataInserter2D::ProbabilityGridRangeDataInserter2D(
     const proto::ProbabilityGridRangeDataInserterOptions2D& options)
     : options_(options),
+      // 把 value~[1,32767] 之间的所有 value 都预先计算出来，存成两个表 hit_table_ 和 miss_table_，
+      // 那么这样在使用时就可以以当前 cell 的 value 为索引值直接查找到更新后的结果 value。
       hit_table_(ComputeLookupTableToApplyCorrespondenceCostOdds(
           Odds(options.hit_probability()))),
       miss_table_(ComputeLookupTableToApplyCorrespondenceCostOdds(
@@ -63,7 +65,7 @@ void ProbabilityGridRangeDataInserter2D::Insert(
   // (i.e. no hits will be ignored because of a miss in the same cell).
   // 调用 CastRays 函数更新 Grid
   // CastRay 中就是把 RangeData 中包含的一系列点，计算出一条从原点到这些点的射线，
-  // 射线端点处的点是Hit，射线中间的点是Free。把所有这些点要在地图上把相应的 cell 进行更新。
+  // 射线端点处的点是 Hit，射线中间的点是 Free。把所有这些点要在地图上把相应的 cell 进行更新。
   CastRays(range_data, hit_table_, miss_table_, options_.insert_free_space(),
            CHECK_NOTNULL(probability_grid));
   probability_grid->FinishUpdate();

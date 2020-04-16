@@ -49,6 +49,8 @@ class ProbabilityGridRangeDataInserter2D : public RangeDataInserterInterface {
 
   // Inserts 'range_data' into 'probability_grid'.
   // 向栅格化地图中插入传感器数据
+  // Insert 函数调用了 CastRays 函数来处理传感器数据
+  // range_data 表示激光测距仪一帧的数据，其中 origin 表示原点，returns 表示 hits 的点集合，misses 表示 free 的点集合。
   virtual void Insert(const sensor::RangeData& range_data,
                       GridInterface* grid) const override;
 
