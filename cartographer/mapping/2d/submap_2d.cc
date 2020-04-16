@@ -135,12 +135,14 @@ void Submap2D::ToResponseProto(
   grid()->DrawToSubmapTexture(texture, local_pose());  // 调用 grid_ 中的 DrawToSubmapTexture 函数设置 response 中的 SubmapTexture 字段
 }
 
+// 利用 RangeDataInserterInterface 来插入并更新概率图
 void Submap2D::InsertRangeData(
     const sensor::RangeData& range_data,
     const RangeDataInserterInterface* range_data_inserter) {
   CHECK(grid_);  // 检查是否栅格化
-  CHECK(!finished());  // 检查图是否已被finished
-  // 调用RangeDataInserterInterface来更新概率图
+  CHECK(!finished());  // 检查图是否已被 finished
+  // 调用 RangeDataInserterInterface 来更新概率图
+  // range_data 表示激光测距仪一帧的数据，其中 origin 表示原点，returns 表示 hits 的点集合，misses 表示 free 的点集合。
   range_data_inserter->Insert(range_data, grid_.get());
   set_num_range_data(num_range_data() + 1);  // 插入的数据+1
 }
