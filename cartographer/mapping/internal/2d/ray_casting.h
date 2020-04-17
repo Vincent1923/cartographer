@@ -30,6 +30,7 @@ namespace mapping {
 
 // For each ray in 'range_data', inserts hits and misses into
 // 'probability_grid'. Hits are handled before misses.
+// 对于“range_data”中的每条射线，将 hits 和 misses 插入“probability_grid”中。Hits 先于 misses。
 void CastRays(const sensor::RangeData& range_data,
               const std::vector<uint16>& hit_table,
               const std::vector<uint16>& miss_table, bool insert_free_space,

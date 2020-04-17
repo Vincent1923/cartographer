@@ -26,21 +26,26 @@ constexpr int kSubpixelScale = 1000;
 // We divide each pixel in kSubpixelScale x kSubpixelScale subpixels. 'begin'
 // and 'end' are coordinates at subpixel precision. We compute all pixels in
 // which some part of the line segment connecting 'begin' and 'end' lies.
+// 我们将每个像素划分为 kSubpixelScale x kSubpixelScale 子像素。“begin” 和 “end” 是 subpixel 精度的坐标。
+// 我们计算连接 “begin” 和 “end” 的线段的某些部分所在的所有像素。
 void CastRay(const Eigen::Array2i& begin, const Eigen::Array2i& end,
              const std::vector<uint16>& miss_table,
              ProbabilityGrid* const probability_grid) {
   // For simplicity, we order 'begin' and 'end' by their x coordinate.
+  // 为简单起见，我们通过它们的 x 坐标对 “begin” 和 “end” 进行排序。
   if (begin.x() > end.x()) {
     CastRay(end, begin, miss_table, probability_grid);
     return;
   }
 
+  // 检查 begin.x()，begin.y() 和 end.y() 是否大于等于 0
   CHECK_GE(begin.x(), 0);
   CHECK_GE(begin.y(), 0);
   CHECK_GE(end.y(), 0);
 
   // Special case: We have to draw a vertical line in full pixels, as 'begin'
   // and 'end' have the same full pixel x coordinate.
+  // 特殊情况：我们必须以全像素绘制一条垂直线，因为 “begin” 和 “end” 具有相同的全像素 x 坐标
   if (begin.x() / kSubpixelScale == end.x() / kSubpixelScale) {
     Eigen::Array2i current(begin.x() / kSubpixelScale,
                            std::min(begin.y(), end.y()) / kSubpixelScale);
@@ -163,6 +168,7 @@ void GrowAsNeeded(const sensor::RangeData& range_data,
 
 }  // namespace
 
+// 对于“range_data”中的每条射线，将 hits 和 misses 插入“probability_grid”中。Hits 先于 misses。
 void CastRays(const sensor::RangeData& range_data,
               const std::vector<uint16>& hit_table,
               const std::vector<uint16>& miss_table,
