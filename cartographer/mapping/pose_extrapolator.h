@@ -66,10 +66,14 @@ class PoseExtrapolator {
   void AddPose(common::Time time, const transform::Rigid3d& pose);
   // 把新的 IMU 数据添加到队列中，删去队列中的过期数据
   void AddImuData(const sensor::ImuData& imu_data);
+  // 添加 odom 里程计数据
   void AddOdometryData(const sensor::OdometryData& odometry_data);
+  // 推算指定时刻的 Pose
   transform::Rigid3d ExtrapolatePose(common::Time time);
 
   // Gravity alignment estimate.
+  // 重力对准估计
+  // 估计经过重力 align 之后的姿态
   Eigen::Quaterniond EstimateGravityOrientation(common::Time time);
 
  private:
