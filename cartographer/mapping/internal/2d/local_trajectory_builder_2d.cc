@@ -33,6 +33,7 @@ static auto* kCeresScanMatcherCostMetric = metrics::Histogram::Null();
 static auto* kScanMatcherResidualDistanceMetric = metrics::Histogram::Null();
 static auto* kScanMatcherResidualAngleMetric = metrics::Histogram::Null();
 
+// 构造函数，为几个成员变量初始化
 LocalTrajectoryBuilder2D::LocalTrajectoryBuilder2D(
     const proto::LocalTrajectoryBuilderOptions2D& options,
     const std::vector<std::string>& expected_range_sensor_ids)
@@ -46,38 +47,61 @@ LocalTrajectoryBuilder2D::LocalTrajectoryBuilder2D(
 
 LocalTrajectoryBuilder2D::~LocalTrajectoryBuilder2D() {}
 
+// 将 RangeData 转化成重力校正后的数据，并经过 VoxelFilter。
+// 关于 VoxelFilter 和 AdaptiveVoxelFilter，可参见如下两个参考链接：
+// 源码解读：https://blog.csdn.net/learnmoreonce/article/details/76218136
+// VoxelFilter 的原理：https://blog.csdn.net/xiaoma_bk/article/details/81780066
+// cartographer 中的 VoxelFilter 是把空间分为很多个立方体的栅格，然后一个栅格内可能有很多点，
+// 但只用一个点来代表整个栅格中的所有点。
+// 简单说，这些滤波就是对点云数据的预处理：去除不合理的范围的点、合并相同位置的点等，从而减少点云数量，提高点云质量。
 sensor::RangeData
 LocalTrajectoryBuilder2D::TransformToGravityAlignedFrameAndFilter(
     const transform::Rigid3f& transform_to_gravity_aligned_frame,
     const sensor::RangeData& range_data) const {
+  // 裁剪数据，指定一定 z 轴范围内的数据，数据范围在 options_.min_z() 到 options_.max_z() 之间。
+  // 在“/src/cartographer/configuration_files/trajectory_builder_2d.lua”中找到。
   const sensor::RangeData cropped =
       sensor::CropRangeData(sensor::TransformRangeData(
                                 range_data, transform_to_gravity_aligned_frame),
                             options_.min_z(), options_.max_z());
+  // 进行体素化滤波
+  // options_.voxel_filter_size() 在“/src/cartographer/configuration_files/trajectory_builder_2d.lua”中设置。
   return sensor::RangeData{
       cropped.origin,
       sensor::VoxelFilter(options_.voxel_filter_size()).Filter(cropped.returns),
       sensor::VoxelFilter(options_.voxel_filter_size()).Filter(cropped.misses)};
 }
 
+// 扫描匹配。输入是：
+// 1. 时间
+// 2. 由 PoseExtrapolator 预测的初始位姿 pose_prediction
+// 3. 经过重力 aligned 的 RangeData
+// 输出是对该帧传感器数据的最优 pose。采用 Ceres Scan Matcher
 std::unique_ptr<transform::Rigid2d> LocalTrajectoryBuilder2D::ScanMatch(
     const common::Time time, const transform::Rigid2d& pose_prediction,
     const sensor::RangeData& gravity_aligned_range_data) {
+  // 获取要进行扫描匹配的 Submap 的 index
   std::shared_ptr<const Submap2D> matching_submap =
       active_submaps_.submaps().front();
   // The online correlative scan matcher will refine the initial estimate for
   // the Ceres scan matcher.
+  // Online Correlative Scan Matcher 将优化 Ceres scan matcher 的初始估计
   transform::Rigid2d initial_ceres_pose = pose_prediction;
+  // 生成一个自适应体素滤波器
   sensor::AdaptiveVoxelFilter adaptive_voxel_filter(
       options_.adaptive_voxel_filter_options());
+  // 对数据进行一下自适应体素滤波
   const sensor::PointCloud filtered_gravity_aligned_point_cloud =
       adaptive_voxel_filter.Filter(gravity_aligned_range_data.returns);
+  // 如果滤波后结果为空，则返回空指针
   if (filtered_gravity_aligned_point_cloud.empty()) {
     return nullptr;
   }
+  // 如果配置项设置使用 OnlineCorrelativeScanMatching。但配置项里默认该项为 false
   if (options_.use_online_correlative_scan_matching()) {
     CHECK_EQ(options_.submaps_options().grid_options_2d().grid_type(),
-             proto::GridOptions2D_GridType_PROBABILITY_GRID);
+             proto::GridOptions2D_GridType_PROBABILITY_GRID);  // 检查是否为概率图
+    // 调用 RealTimeCorrelativeScanMatcher2D 的方法进行匹配，返回一个得分
     double score = real_time_correlative_scan_matcher_.Match(
         pose_prediction, filtered_gravity_aligned_point_cloud,
         *static_cast<const ProbabilityGrid*>(matching_submap->grid()),
@@ -85,12 +109,14 @@ std::unique_ptr<transform::Rigid2d> LocalTrajectoryBuilder2D::ScanMatch(
     kFastCorrelativeScanMatcherScoreMetric->Observe(score);
   }
 
+  // 调用 Ceres 库来实现匹配。匹配结果放到 pose_observation 中
   auto pose_observation = common::make_unique<transform::Rigid2d>();
   ceres::Solver::Summary summary;
   ceres_scan_matcher_.Match(pose_prediction.translation(), initial_ceres_pose,
                             filtered_gravity_aligned_point_cloud,
                             *matching_submap->grid(), pose_observation.get(),
                             &summary);
+  // 统计残差
   if (pose_observation) {
     kCeresScanMatcherCostMetric->Observe(summary.final_cost);
     double residual_distance =
@@ -101,6 +127,7 @@ std::unique_ptr<transform::Rigid2d> LocalTrajectoryBuilder2D::ScanMatch(
                                      pose_prediction.rotation().angle());
     kScanMatcherResidualAngleMetric->Observe(residual_angle);
   }
+  // 返回优化后的 pose
   return pose_observation;
 }
 

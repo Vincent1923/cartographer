@@ -58,6 +58,7 @@ class LocalTrajectoryBuilder2D {
     std::unique_ptr<const InsertionResult> insertion_result;
   };
 
+  // 构造函数，为几个成员变量初始化
   explicit LocalTrajectoryBuilder2D(
       const proto::LocalTrajectoryBuilderOptions2D& options,
       const std::vector<std::string>& expected_range_sensor_ids);
@@ -83,6 +84,7 @@ class LocalTrajectoryBuilder2D {
   std::unique_ptr<MatchingResult> AddAccumulatedRangeData(
       common::Time time, const sensor::RangeData& gravity_aligned_range_data,
       const transform::Rigid3d& gravity_alignment);
+  // 将 RangeData 转化成重力校正后的数据，并经过 VoxelFilter
   sensor::RangeData TransformToGravityAlignedFrameAndFilter(
       const transform::Rigid3f& transform_to_gravity_aligned_frame,
       const sensor::RangeData& range_data) const;
@@ -95,6 +97,7 @@ class LocalTrajectoryBuilder2D {
 
   // Scan matches 'gravity_aligned_range_data' and returns the observed pose,
   // or nullptr on failure.
+  // 对'gravity_aligned_range_data'扫描匹配并返回观察到的位姿，如果失败则返回 nullptr
   std::unique_ptr<transform::Rigid2d> ScanMatch(
       common::Time time, const transform::Rigid2d& pose_prediction,
       const sensor::RangeData& gravity_aligned_range_data);
