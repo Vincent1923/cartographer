@@ -105,6 +105,8 @@ class LocalTrajectoryBuilder2D {
   const proto::LocalTrajectoryBuilderOptions2D options_;  // 参数配置项
   ActiveSubmaps2D active_submaps_;  // 在 mapping/2d/submap_2d.h 中定义。同时维护着两个 submap
 
+  // MotionFilter 定义在"/mapping/internal/motion_filter.h"中，其主要作用是对数据进行一下滤波。
+  // 当两帧数据的间隔时间/两帧的Pose跨过的距离/两帧的Pose转过的角度等不超过一定的阈值时，认为新的数据提供的信息很少，这些数据可以直接舍去。
   MotionFilter motion_filter_;
   scan_matching::RealTimeCorrelativeScanMatcher2D
       real_time_correlative_scan_matcher_;  // 实时的扫描匹配，用的相关分析方法

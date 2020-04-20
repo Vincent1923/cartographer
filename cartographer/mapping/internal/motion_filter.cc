@@ -22,23 +22,26 @@
 namespace cartographer {
 namespace mapping {
 
+// 以下三个阈值定义在配置文件 /src/cartographer/configuration_files/trajectory_builder_2d.lua 中
 proto::MotionFilterOptions CreateMotionFilterOptions(
     common::LuaParameterDictionary* const parameter_dictionary) {
   proto::MotionFilterOptions options;
   options.set_max_time_seconds(
-      parameter_dictionary->GetDouble("max_time_seconds"));
+      parameter_dictionary->GetDouble("max_time_seconds"));     // max_time_seconds = 5.0
   options.set_max_distance_meters(
-      parameter_dictionary->GetDouble("max_distance_meters"));
+      parameter_dictionary->GetDouble("max_distance_meters"));  // max_distance_meters = 0.2
   options.set_max_angle_radians(
-      parameter_dictionary->GetDouble("max_angle_radians"));
+      parameter_dictionary->GetDouble("max_angle_radians"));    // max_angle_radians = math.rad(1.)
   return options;
 }
 
 MotionFilter::MotionFilter(const proto::MotionFilterOptions& options)
     : options_(options) {}
 
+// 根据预先设置的阈值，如果累积运动超过提前预设的阈值，则返回 false；否则返回 true，然后把该数据累加上。
 bool MotionFilter::IsSimilar(const common::Time time,
                              const transform::Rigid3d& pose) {
+  // LOG_IF_EVERY_N(INFO, num_total_ >= 500, 500) 表示当 num_total_ >= 500 的条件连续成立 500 次的时候记录日志信息。
   LOG_IF_EVERY_N(INFO, num_total_ >= 500, 500)
       << "Motion filter reduced the number of nodes to "
       << 100. * num_different_ / num_total_ << "%.";
