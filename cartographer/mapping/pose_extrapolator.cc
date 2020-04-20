@@ -50,7 +50,7 @@ std::unique_ptr<PoseExtrapolator> PoseExtrapolator::InitializeWithImu(
   extrapolator->imu_tracker_->AddImuAngularVelocityObservation(
       imu_data.angular_velocity);
   extrapolator->imu_tracker_->Advance(imu_data.time);
-  // 添加一个 Pose。从这儿来看，Pose 队列并不是从 ScanMatching 而来的，而是从 Imu 测量得到的。
+  // 添加一个 Pose。
   extrapolator->AddPose(
       imu_data.time,
       transform::Rigid3d::Rotation(extrapolator->imu_tracker_->orientation()));
@@ -267,7 +267,7 @@ void PoseExtrapolator::AdvanceImuTracker(const common::Time time,
   imu_tracker->Advance(time);
 }
 
-// 结算姿态的变化量
+// 解算姿态的变化量
 Eigen::Quaterniond PoseExtrapolator::ExtrapolateRotation(
     const common::Time time, ImuTracker* const imu_tracker) const {
   // 检查指定时间是否大于等于 ImuTracker 的时间

@@ -98,7 +98,7 @@ class PoseExtrapolator {
   std::deque<TimedPose> timed_pose_queue_;  // 存储要持续跟踪的 Poses,应该是从 ScanMatching 输出的 PoseObservation
   // 从持续跟踪一段时间的 Pose 队列中估计出来的线速度，初始化为0
   Eigen::Vector3d linear_velocity_from_poses_ = Eigen::Vector3d::Zero();
-  // 从持续跟踪一段时间的 Pose 队列中估计出来的线速度，初始化为0
+  // 从持续跟踪一段时间的 Pose 队列中估计出来的角速度，初始化为0
   Eigen::Vector3d angular_velocity_from_poses_ = Eigen::Vector3d::Zero();
 
   const double gravity_time_constant_;  // 重力的时间间隔？

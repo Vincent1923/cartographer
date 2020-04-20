@@ -39,7 +39,7 @@ ImuTracker::ImuTracker(const double imu_gravity_time_constant,
 // 把 ImuTracker 更新到指定时刻 time，并把响应的 orientation_，gravity_vector_ 和 time_ 进行更新
 // 指定的时间 time 要比 ImuTracker 维护的时间 time_ 晚，否则不需要更新。
 void ImuTracker::Advance(const common::Time time) {
-  // 检查 ImuTracker 维护的时间 time_ 是否大于等于指定时间 time
+  // 检查 ImuTracker 维护的时间 time_ 是否小于等于指定时间 time
   CHECK_LE(time_, time);
   // 求指定时间相对当前时间的时间差
   const double delta_t = common::ToSeconds(time - time_);
