@@ -72,6 +72,10 @@ class LocalTrajectoryBuilder2D {
   // for 2D SLAM. `TimedPointCloudData::time` is when the last point in
   // `range_data` was acquired, `TimedPointCloudData::ranges` contains the
   // relative time of point with respect to `TimedPointCloudData::time`.
+  //
+  // range data 累积完成后，返回“MatchingResult”，否则返回“nullptr”。
+  // 对于2D SLAM，range data 必须近似为水平。"TimedPointCloudData::time"是获取"range_data"中最后一个点的时间，
+  // "TimedPointCloudData::ranges"包含点相对于“TimedPointCloudData::time”的相对时间。
   std::unique_ptr<MatchingResult> AddRangeData(
       const std::string& sensor_id,
       const sensor::TimedPointCloudData& range_data);
