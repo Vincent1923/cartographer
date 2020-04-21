@@ -25,6 +25,10 @@
 namespace cartographer {
 namespace mapping {
 
+// TimePointCloudData 的第三个元素为类型 TimePointCloud，是带时间的点云数据。
+// 3D情况下，前3个元素是点的坐标，第4个元素是测量到每个点的相对时间。
+// 时间以s为单位，以最后一个点的捕获时间为0，则前面捕获的点都为负数，并且越早捕获的点时间值的绝对值越大。
+// 对于2D情况，第3个元素始终为0，第4个元素同样表示时间。
 sensor::TimedPointCloudOriginData RangeDataCollator::AddRangeData(
     const std::string& sensor_id,
     const sensor::TimedPointCloudData& timed_point_cloud_data) {

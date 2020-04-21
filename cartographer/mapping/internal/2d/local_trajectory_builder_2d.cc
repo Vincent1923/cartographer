@@ -131,10 +131,17 @@ std::unique_ptr<transform::Rigid2d> LocalTrajectoryBuilder2D::ScanMatch(
   return pose_observation;
 }
 
+// 添加 RangeData，返回匹配结果。这是最上层的函数。通过该函数调用其他各种函数。
 std::unique_ptr<LocalTrajectoryBuilder2D::MatchingResult>
 LocalTrajectoryBuilder2D::AddRangeData(
     const std::string& sensor_id,
     const sensor::TimedPointCloudData& unsynchronized_data) {
+  // RangeDataCollator 定义在"/mapping/internal/range_data_collator.h"中。
+  // 该类的主要任务是把来自不同传感器的 TimePointCloudData 进行一下同步。
+  // TimePointCloudData 的第三个元素为类型 TimePointCloud，是带时间的点云数据。
+  // 3D情况下，前3个元素是点的坐标，第4个元素是测量到每个点的相对时间。
+  // 时间以s为单位，以最后一个点的捕获时间为0，则前面捕获的点都为负数，并且越早捕获的点时间值的绝对值越大。
+  // 对于2D情况，第3个元素始终为0，第4个元素同样表示时间。
   auto synchronized_data =
       range_data_collator_.AddRangeData(sensor_id, unsynchronized_data);
   if (synchronized_data.ranges.empty()) {
@@ -142,8 +149,11 @@ LocalTrajectoryBuilder2D::AddRangeData(
     return nullptr;
   }
 
+  // 取点云获取的时间为基准为 PoseExtrapolator 初始化。
+  // 这里猜测点云获取的时间 synchronized_data.time 为获取点云集最后一个点的时间
   const common::Time& time = synchronized_data.time;
   // Initialize extrapolator now if we do not ever use an IMU.
+  // 初始化 PoseExtrapolator
   if (!options_.use_imu_data()) {
     InitializeExtrapolator(time);
   }
@@ -151,30 +161,40 @@ LocalTrajectoryBuilder2D::AddRangeData(
   if (extrapolator_ == nullptr) {
     // Until we've initialized the extrapolator with our first IMU message, we
     // cannot compute the orientation of the rangefinder.
+    // 除非我们使用第一个 IMU 消息初始化 extrapolator，否则我们无法计算测距仪的方向
     LOG(INFO) << "Extrapolator not yet initialized.";
     return nullptr;
   }
 
+  // 数据是否为空
   CHECK(!synchronized_data.ranges.empty());
   // TODO(gaschler): Check if this can strictly be 0.
+  // 看一下数据点的第4个元素是不是小于等于0。2d情况第3个元素都是0。第四个元素是时间
   CHECK_LE(synchronized_data.ranges.back().point_time[3], 0.f);
+  // 第一个点的时间就等于点云集获取的时间加上第一个点记录的相对时间
   const common::Time time_first_point =
       time +
       common::FromSeconds(synchronized_data.ranges.front().point_time[3]);
+  // 如果该时间比 PoseExtrapolator 的最新时间还要早，说明在第一个点被捕获时，PoseExtrapolator 还没初始化
   if (time_first_point < extrapolator_->GetLastPoseTime()) {
     LOG(INFO) << "Extrapolator is still initializing.";
     return nullptr;
   }
 
+  // 轨迹开始时刻。只在初始时执行一次。之后 num_accumulated_ 不再等于0，该语句就不执行了
   if (num_accumulated_ == 0) {
     accumulation_started_ = std::chrono::steady_clock::now();
   }
 
+  // 遍历每个点，计算在每个点时 PoseExtrapolator 推算出来的机器人的 Pose，放入 range_data_poses 这个向量中
   std::vector<transform::Rigid3f> range_data_poses;
+  // 为该集合预分配内存大小
   range_data_poses.reserve(synchronized_data.ranges.size());
   bool warned = false;
-  for (const auto& range : synchronized_data.ranges) {
+  for (const auto& range : synchronized_data.ranges) {  // 遍历点集
+    // 点云中每个点的捕获时刻
     common::Time time_point = time + common::FromSeconds(range.point_time[3]);
+    // 如果该时刻早于 PoseExtrapolator 的时间
     if (time_point < extrapolator_->GetLastExtrapolatedTime()) {
       if (!warned) {
         LOG(ERROR)
@@ -182,8 +202,10 @@ LocalTrajectoryBuilder2D::AddRangeData(
             << extrapolator_->GetLastExtrapolatedTime() << " to " << time_point;
         warned = true;
       }
+      // 时间设置为 PoseExtrapolator 的时间
       time_point = extrapolator_->GetLastExtrapolatedTime();
     }
+    // 推算 time_point 这个时间点的 Pose
     range_data_poses.push_back(
         extrapolator_->ExtrapolatePose(time_point).cast<float>());
   }
@@ -196,18 +218,28 @@ LocalTrajectoryBuilder2D::AddRangeData(
 
   // Drop any returns below the minimum range and convert returns beyond the
   // maximum range into misses.
+  // 把任何 returns 降至 minimum range 以下，并将超出 maximum range 的 returns 转换为 misses
+  // 遍历每一个点
   for (size_t i = 0; i < synchronized_data.ranges.size(); ++i) {
+    // 获取第i个点
     const Eigen::Vector4f& hit = synchronized_data.ranges[i].point_time;
+    // 第i个点的原点
     const Eigen::Vector3f origin_in_local =
         range_data_poses[i] *
         synchronized_data.origins.at(synchronized_data.ranges[i].origin_index);
+    // 将 hit 集转变成在 Local 坐标系下
     const Eigen::Vector3f hit_in_local = range_data_poses[i] * hit.head<3>();
+    // 局部坐标系下由 hit 点到 origin 的射线
     const Eigen::Vector3f delta = hit_in_local - origin_in_local;
-    const float range = delta.norm();
+    const float range = delta.norm();  // 该向量的模
+    // 如果该向量的模在合理范围内，则把它压入 accumulated_range_data_ 的 returns 集合中
+    // 参数 min_range() 和 max_range() 主要是设置雷达数据的最小距离和最大距离，
+    // 配置参数的文件在“cartographer/configuration_files/trajectory_builder_2d.lua”中。
     if (range >= options_.min_range()) {
       if (range <= options_.max_range()) {
         accumulated_range_data_.returns.push_back(hit_in_local);
       } else {
+        // 否则，放入 accumulated_range_data_ 的 misses 集合中
         accumulated_range_data_.misses.push_back(
             origin_in_local +
             options_.missing_data_ray_length() / range * delta);
@@ -216,16 +248,19 @@ LocalTrajectoryBuilder2D::AddRangeData(
   }
   ++num_accumulated_;
 
+  // 点云的数量大于1的话
   if (num_accumulated_ >= options_.num_accumulated_range_data()) {
     num_accumulated_ = 0;
+    // 估计重力
     const transform::Rigid3d gravity_alignment = transform::Rigid3d::Rotation(
         extrapolator_->EstimateGravityOrientation(time));
     // TODO(gaschler): This assumes that 'range_data_poses.back()' is at time
     // 'time'.
     accumulated_range_data_.origin = range_data_poses.back().translation();
+    // 调用 AddAccumulatedRangeData 进行匹配、插入数据等。返回 MatchingResult
     return AddAccumulatedRangeData(
         time,
-        TransformToGravityAlignedFrameAndFilter(
+        TransformToGravityAlignedFrameAndFilter(  // 调用这个函数进行重力 align
             gravity_alignment.cast<float>() * range_data_poses.back().inverse(),
             accumulated_range_data_),
         gravity_alignment);
