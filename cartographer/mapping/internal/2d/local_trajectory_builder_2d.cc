@@ -268,70 +268,90 @@ LocalTrajectoryBuilder2D::AddRangeData(
   return nullptr;
 }
 
+// 添加累计的 RangeData，返回匹配结果。调用了 ScanMatch 和 InsertIntoSubmap
 std::unique_ptr<LocalTrajectoryBuilder2D::MatchingResult>
 LocalTrajectoryBuilder2D::AddAccumulatedRangeData(
     const common::Time time,
     const sensor::RangeData& gravity_aligned_range_data,
     const transform::Rigid3d& gravity_alignment) {
+  // 如果数据为空
   if (gravity_aligned_range_data.returns.empty()) {
     LOG(WARNING) << "Dropped empty horizontal range data.";
     return nullptr;
   }
 
   // Computes a gravity aligned pose prediction.
+  // 计算经过重力 aligned 的 Pose
+  // 从 PoseExtrapolator 处获得未经重力 aligned 的 Pose
   const transform::Rigid3d non_gravity_aligned_pose_prediction =
       extrapolator_->ExtrapolatePose(time);
+  // 重力 align
   const transform::Rigid2d pose_prediction = transform::Project2D(
       non_gravity_aligned_pose_prediction * gravity_alignment.inverse());
 
   // local map frame <- gravity-aligned frame
+  // 调用 ScanMathc 函数进行匹配，求取 Scan 插入 Submap 的最优 Pose
   std::unique_ptr<transform::Rigid2d> pose_estimate_2d =
       ScanMatch(time, pose_prediction, gravity_aligned_range_data);
+  // 如果为空，表示匹配为空
   if (pose_estimate_2d == nullptr) {
     LOG(WARNING) << "Scan matching failed.";
     return nullptr;
   }
+  // 考虑重力方向，将 2d 的 pose 变成 3d 的 pose
   const transform::Rigid3d pose_estimate =
       transform::Embed3D(*pose_estimate_2d) * gravity_alignment;
+  // 将新的 pose 添加到 PoseExtrapolator 的 Pose 队列中
   extrapolator_->AddPose(time, pose_estimate);
 
+  // 把点云数据通过估计出来的 Pose，转化为在局部坐标系中的点云数据
   sensor::RangeData range_data_in_local =
       TransformRangeData(gravity_aligned_range_data,
                          transform::Embed3D(pose_estimate_2d->cast<float>()));
+  // 调用 InsertIntoSubmap 函数更新 Submap，同时返回插入结果
   std::unique_ptr<InsertionResult> insertion_result =
       InsertIntoSubmap(time, range_data_in_local, gravity_aligned_range_data,
                        pose_estimate, gravity_alignment.rotation());
+  // 统计一下数据累计的时间
   auto duration = std::chrono::steady_clock::now() - accumulation_started_;
   kLocalSlamLatencyMetric->Set(
       std::chrono::duration_cast<std::chrono::seconds>(duration).count());
+  // 返回匹配结果
   return common::make_unique<MatchingResult>(
       MatchingResult{time, pose_estimate, std::move(range_data_in_local),
                      std::move(insertion_result)});
 }
 
+// 插入 submap, 返回插入结果。这是在都已经完成匹配的情况下，调用该函数更新 submap
 std::unique_ptr<LocalTrajectoryBuilder2D::InsertionResult>
 LocalTrajectoryBuilder2D::InsertIntoSubmap(
     const common::Time time, const sensor::RangeData& range_data_in_local,
     const sensor::RangeData& gravity_aligned_range_data,
     const transform::Rigid3d& pose_estimate,
     const Eigen::Quaterniond& gravity_alignment) {
+  // 如果没有被 MotionFilter 滤掉
   if (motion_filter_.IsSimilar(time, pose_estimate)) {
     return nullptr;
   }
 
   // Querying the active submaps must be done here before calling
   // InsertRangeData() since the queried values are valid for next insertion.
+  // 在调用 InsertRangeData() 之前，必须在此处完成对 active submaps 的查询，因为查询的值对于下一次插入有效。
+  // 把 active_submaps_ 中维护的 Submap 列表放到 insertion_submaps 这个向量中
   std::vector<std::shared_ptr<const Submap2D>> insertion_submaps;
   for (const std::shared_ptr<Submap2D>& submap : active_submaps_.submaps()) {
     insertion_submaps.push_back(submap);
   }
+  // 调用 submap 的工具函数将传感器数据插入，更新 Submap。
   active_submaps_.InsertRangeData(range_data_in_local);
 
+  // 生成一个体素化滤波器并滤波
   sensor::AdaptiveVoxelFilter adaptive_voxel_filter(
       options_.loop_closure_adaptive_voxel_filter_options());
   const sensor::PointCloud filtered_gravity_aligned_point_cloud =
       adaptive_voxel_filter.Filter(gravity_aligned_range_data.returns);
 
+  // 返回插入结果
   return common::make_unique<InsertionResult>(InsertionResult{
       std::make_shared<const TrajectoryNode::Data>(TrajectoryNode::Data{
           time,
