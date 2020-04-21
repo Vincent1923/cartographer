@@ -364,12 +364,14 @@ LocalTrajectoryBuilder2D::InsertIntoSubmap(
       std::move(insertion_submaps)});
 }
 
+// 添加 IMU 数据，并对 PoseExtrapolator 进行带 IMU 的设置。将 IMU 数据压入队列
 void LocalTrajectoryBuilder2D::AddImuData(const sensor::ImuData& imu_data) {
   CHECK(options_.use_imu_data()) << "An unexpected IMU packet was added.";
   InitializeExtrapolator(imu_data.time);
   extrapolator_->AddImuData(imu_data);
 }
 
+// 添加里程计数据，压入队列中
 void LocalTrajectoryBuilder2D::AddOdometryData(
     const sensor::OdometryData& odometry_data) {
   if (extrapolator_ == nullptr) {
@@ -380,6 +382,7 @@ void LocalTrajectoryBuilder2D::AddOdometryData(
   extrapolator_->AddOdometryData(odometry_data);
 }
 
+// 初始化 Extrapolator
 void LocalTrajectoryBuilder2D::InitializeExtrapolator(const common::Time time) {
   if (extrapolator_ != nullptr) {
     return;
@@ -387,11 +390,14 @@ void LocalTrajectoryBuilder2D::InitializeExtrapolator(const common::Time time) {
   // We derive velocities from poses which are at least 1 ms apart for numerical
   // stability. Usually poses known to the extrapolator will be further apart
   // in time and thus the last two are used.
+  // 该参数配置的是 PoseExtrapolator 中 Pose 队列的持续时间。设置为1ms。
   constexpr double kExtrapolationEstimationTimeSec = 0.001;
   // TODO(gaschler): Consider using InitializeWithImu as 3D does.
+  // 生成一个 PoseExtrapolator
   extrapolator_ = common::make_unique<PoseExtrapolator>(
       ::cartographer::common::FromSeconds(kExtrapolationEstimationTimeSec),
       options_.imu_gravity_time_constant());
+  // 初始时刻，添加一个 Pose:I
   extrapolator_->AddPose(time, transform::Rigid3d::Identity());
 }
 
