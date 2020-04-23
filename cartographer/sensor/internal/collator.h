@@ -32,6 +32,7 @@ namespace sensor {
 
 class Collator : public CollatorInterface {
  public:
+  // 构造函数
   Collator() {}
 
   Collator(const Collator&) = delete;
@@ -51,6 +52,7 @@ class Collator : public CollatorInterface {
 
  private:
   // Queue keys are a pair of trajectory ID and sensor identifier.
+  // Queue 键是一对 trajectory ID 和传感器 id。
   OrderedMultiQueue queue_;
 
   // Map of trajectory ID to all associated QueueKeys.
