@@ -36,10 +36,15 @@ namespace mapping {
 
 // Collates sensor data using a sensor::CollatorInterface, then passes it on to
 // a mapping::TrajectoryBuilderInterface which is common for 2D and 3D.
+// 使用 sensor::CollatorInterface 整理传感器数据，然后将其传递到 2D 和 3D 通用的 mapping::TrajectoryBuilderInterface。
+//
+// CollatedTrajectoryBuilder 类继承自 TrajectoryBuilderInterface。
+// 作用：使用 Collator 处理从传感器收集而来的数据，并传递给 GlobalTrajectoryBuilderInterface。
 class CollatedTrajectoryBuilder : public TrajectoryBuilderInterface {
  public:
   using SensorId = TrajectoryBuilderInterface::SensorId;
 
+  // 构造函数
   CollatedTrajectoryBuilder(
       sensor::CollatorInterface* sensor_collator, int trajectory_id,
       const std::set<SensorId>& expected_sensor_ids,
@@ -50,6 +55,7 @@ class CollatedTrajectoryBuilder : public TrajectoryBuilderInterface {
   CollatedTrajectoryBuilder& operator=(const CollatedTrajectoryBuilder&) =
       delete;
 
+  // AddSensorData() 添加传感器数据
   void AddSensorData(
       const std::string& sensor_id,
       const sensor::TimedPointCloudData& timed_point_cloud_data) override {
@@ -88,13 +94,15 @@ class CollatedTrajectoryBuilder : public TrajectoryBuilderInterface {
   void HandleCollatedSensorData(const std::string& sensor_id,
                                 std::unique_ptr<sensor::Data> data);
 
-  sensor::CollatorInterface* const sensor_collator_;
-  const int trajectory_id_;
-  std::unique_ptr<TrajectoryBuilderInterface> wrapped_trajectory_builder_;
+  // 成员变量
+  sensor::CollatorInterface* const sensor_collator_;  // 传感器收集类实例
+  const int trajectory_id_;  // 轨迹 id
+  std::unique_ptr<TrajectoryBuilderInterface> wrapped_trajectory_builder_;  // 全局的建图接口
 
   // Time at which we last logged the rates of incoming sensor data.
-  std::chrono::steady_clock::time_point last_logging_time_;
-  std::map<std::string, common::RateTimer<>> rate_timers_;
+  // 我们上次记录传入传感器数据速率的时间。
+  std::chrono::steady_clock::time_point last_logging_time_;  // 上一次传递数据时间
+  std::map<std::string, common::RateTimer<>> rate_timers_;   // 频率
 };
 
 }  // namespace mapping

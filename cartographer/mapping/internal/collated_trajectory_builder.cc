@@ -28,6 +28,10 @@ constexpr double kSensorDataRatesLoggingPeriodSeconds = 15.;
 
 }  // namespace
 
+// 构造函数
+// sensor_collator：传感器收集类实例，将多传感器采集的数据归并到轨迹上。
+// trajectory_id：轨迹线 id
+// expected_sensor_ids：路径 trajectory_id 上的传感器 id
 CollatedTrajectoryBuilder::CollatedTrajectoryBuilder(
     sensor::CollatorInterface* const sensor_collator, const int trajectory_id,
     const std::set<SensorId>& expected_sensor_ids,
@@ -35,11 +39,14 @@ CollatedTrajectoryBuilder::CollatedTrajectoryBuilder(
     : sensor_collator_(sensor_collator),
       trajectory_id_(trajectory_id),
       wrapped_trajectory_builder_(std::move(wrapped_trajectory_builder)),
+      // last_logging_time_ 赋值为当前时间，std::chrono::steady_clock::now() 代表当前时间的时间点。
       last_logging_time_(std::chrono::steady_clock::now()) {
+  // 获取 trajectory_id 路径上的传感器 id
   std::unordered_set<std::string> expected_sensor_id_strings;
   for (const auto& sensor_id : expected_sensor_ids) {
     expected_sensor_id_strings.insert(sensor_id.id);
   }
+  // 添加一个轨迹线，接收有序的传感器数据，并使用 callback 回调函数 HandleCollatedSensorData() 处理 data
   sensor_collator_->AddTrajectory(
       trajectory_id, expected_sensor_id_strings,
       [this](const std::string& sensor_id, std::unique_ptr<sensor::Data> data) {

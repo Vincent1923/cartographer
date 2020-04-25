@@ -175,12 +175,40 @@ int MapBuilder::AddTrajectoryBuilder(
     }
     // 检查类型转化
     DCHECK(dynamic_cast<PoseGraph2D*>(pose_graph_.get()));  // dynamic_cast是强制类型转化，把PoseGraphInterface的指针转化为PoseGraph2D
-    // 将生成的CollatedTrajectoryBuilder压入向量列表中
+    // 将生成的 CollatedTrajectoryBuilder 压入向量列表中。
+    // trajectory_builders_ 是一个 std::vector 容器，里面存放的数据类型是 TrajectoryBuilderInterface 类型的智能指针。
     trajectory_builders_.push_back(
-        // 真正地创建一个TrajectoryBuilder，其中CollatedTrajectoryBuilder继承了接口TrajectoryBuilder
+        /*
+         * （1）真正地创建一个 TrajectoryBuilderInterface，其中 CollatedTrajectoryBuilder 继承了接口 TrajectoryBuilderInterface。
+         * （2）CollatedTrajectoryBuilder 作用：使用 Collator 处理从传感器收集而来的数据，并传递给 GlobalTrajectoryBuilderInterface。
+         * （3）CollatedTrajectoryBuilder 的构造函数有4个参数：
+         * sensor_collator：传感器收集类实例。
+         * trajectory_id：轨迹索引。
+         * expected_sensor_ids：轨迹上的传感器 id。
+         * wrapped_trajectory_builder：TrajectoryBuilderInterface 的智能指针。
+         */
         common::make_unique<CollatedTrajectoryBuilder>(
+            /*
+             * sensor_collator_ 是一个接口 sensor::CollatorInterface 的智能指针，在 MapBuilder 的构造函数进行初始化。
+             * 它有两种的实现方式，一般方式为 sensor::Collator，即 sensor::Collator 继承了 sensor::CollatorInterface。
+             * 主要作用：将多传感器采集的数据归并到轨迹上。
+             */
             sensor_collator_.get(), trajectory_id, expected_sensor_ids,
-            CreateGlobalTrajectoryBuilder2D(  // CreateGlobalTrajectoryBuilder2D()函数生成一个TrajectoryBuilderInterface的智能指针
+            /*
+             * （1）CreateGlobalTrajectoryBuilder2D() 函数生成一个 GlobalTrajectoryBuilder 的智能指针。
+             *     GlobalTrajectoryBuilder 继承了 TrajectoryBuilderInterface。
+             * （2）GlobalTrajectoryBuilder 是一个模板类，其模板列表中的 LocalTrajectoryBuilder2D 和 PoseGraph2D 分别是前端和后端的两个核心类型。
+             *     LocalTrajectoryBuilder2D 负责接收来自激光雷达的数据，进行扫描匹配，估计机器人位姿，并将传感器数据插入子图中，更新子图。
+             *     PoseGraph2D 在后台进行闭环检测全局优化。
+             * （3）它的构造函数有4个参数：
+             * local_trajectory_builder：位姿跟踪器，前端的核心对象，其数据类型是一个模板参数，这里实际使用的是 LocalTrajectoryBuilder2D。
+             * trajectory_id：轨迹索引。
+             * pose_graph：位姿图，后端的核心对象，其数据类型是一个模板参数，这里实际使用的是 PoseGraph2D。
+             * local_slam_result_callback：前端数据更新后的回调函数。
+             * （4）从它的参数列表中来看，除了含有刚刚构建的 local_trajectory_builder 对象之外，还引入了位姿图对象 pose_graph_。
+             *     个人猜测这是一个具有闭环功能的 SLAM 对象，所以称之为 Global 的。
+             */
+            CreateGlobalTrajectoryBuilder2D(
                 std::move(local_trajectory_builder), trajectory_id,
                 static_cast<PoseGraph2D*>(pose_graph_.get()),
                 local_slam_result_callback)));
