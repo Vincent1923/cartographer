@@ -30,8 +30,10 @@ constexpr double kSensorDataRatesLoggingPeriodSeconds = 15.;
 
 // 构造函数
 // sensor_collator：传感器收集类实例，将多传感器采集的数据归并到轨迹上。
-// trajectory_id：轨迹线 id
-// expected_sensor_ids：路径 trajectory_id 上的传感器 id
+// trajectory_id：轨迹线 id。
+// expected_sensor_ids：路径 trajectory_id 上的传感器 id。
+// wrapped_trajectory_builder：全局的建图接口。在 map_builder_ 中传入的数据类型为 GlobalTrajectoryBuilder。
+//                             GlobalTrajectoryBuilder 继承自 TrajectoryBuilderInterface。
 CollatedTrajectoryBuilder::CollatedTrajectoryBuilder(
     sensor::CollatorInterface* const sensor_collator, const int trajectory_id,
     const std::set<SensorId>& expected_sensor_ids,

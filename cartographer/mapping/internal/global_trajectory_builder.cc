@@ -36,6 +36,14 @@ class GlobalTrajectoryBuilder : public mapping::TrajectoryBuilderInterface {
  public:
   // Passing a 'nullptr' for 'local_trajectory_builder' is acceptable, but no
   // 'TimedPointCloudData' may be added in that case.
+  // 为“local_trajectory_builder”传递“nullptr”是可以接受的，但在这种情况下，不能添加“TimedPointCloudData”。、
+  //
+  // 构造函数，它有四个输入参数，分别记录了轨迹跟踪器、轨迹索引、位姿图、前端回调函数。
+  // 这些参数在成员构造列表中，被拿来一一构建成员变量。函数体是空的没有任何操作。
+  // local_trajectory_builder：位姿跟踪器，前端的核心对象，其数据类型是一个模板参数。
+  // trajectory_id：轨迹索引。
+  // pose_graph：位姿图，后端的核心对象，其数据类型是一个模板参数。
+  // local_slam_result_callback：前端数据更新后的回调函数。
   GlobalTrajectoryBuilder(
       std::unique_ptr<LocalTrajectoryBuilder> local_trajectory_builder,
       const int trajectory_id, PoseGraph* const pose_graph,
@@ -44,11 +52,14 @@ class GlobalTrajectoryBuilder : public mapping::TrajectoryBuilderInterface {
         pose_graph_(pose_graph),
         local_trajectory_builder_(std::move(local_trajectory_builder)),
         local_slam_result_callback_(local_slam_result_callback) {}
+  // 析够函数，函数体也是空的什么也没做。
   ~GlobalTrajectoryBuilder() override {}
 
+  // 屏蔽了拷贝构造和拷贝赋值两个构造对象的途径。
   GlobalTrajectoryBuilder(const GlobalTrajectoryBuilder&) = delete;
   GlobalTrajectoryBuilder& operator=(const GlobalTrajectoryBuilder&) = delete;
 
+  // 处理点云数据
   void AddSensorData(
       const std::string& sensor_id,
       const sensor::TimedPointCloudData& timed_point_cloud_data) override {
@@ -136,6 +147,8 @@ std::unique_ptr<TrajectoryBuilderInterface> CreateGlobalTrajectoryBuilder2D(
     const int trajectory_id, mapping::PoseGraph2D* const pose_graph,
     const TrajectoryBuilderInterface::LocalSlamResultCallback&
         local_slam_result_callback) {
+  // 生成一个 GlobalTrajectoryBuilder 的智能指针。
+  // 这里传入的模板为 LocalTrajectoryBuilder2D 和 PoseGraph2D，表示 2D 构图。
   return common::make_unique<
       GlobalTrajectoryBuilder<LocalTrajectoryBuilder2D, mapping::PoseGraph2D>>(
       std::move(local_trajectory_builder), trajectory_id, pose_graph,
