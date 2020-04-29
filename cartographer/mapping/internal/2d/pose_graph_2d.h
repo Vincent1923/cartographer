@@ -57,6 +57,10 @@ namespace mapping {
 // Each node has been matched against one or more submaps (adding a constraint
 // for each match), both poses of nodes and of submaps are to be optimized.
 // All constraints are between a submap i and a node j.
+//
+// 它被扩展用于构建子图：
+// 每个节点已经针对一个或多个子图进行了匹配（为每个匹配添加了约束），节点和子图的位姿都将得到优化。
+// 所有约束都在子图i和节点j之间。
 class PoseGraph2D : public PoseGraph {
  public:
   PoseGraph2D(
@@ -149,16 +153,34 @@ class PoseGraph2D : public PoseGraph {
   // The current state of the submap in the background threads. When this
   // transitions to kFinished, all nodes are tried to match against this submap.
   // Likewise, all new nodes are matched against submaps which are finished.
+  //
+  // 子图在后台线程中的当前状态。当此过渡到 kFinished 时，将尝试所有节点与此子图进行匹配。
+  // 同样，所有新节点都与完成的子图匹配。
+  //
+  // 一个枚举类，表征一个 Submap 的状态：kActive 或 kFinished。
+  // 当一个 submap 由 Active 转为 kFinished时，所有的 Nodes 都要跟该 submap 做一个匹配。
+  // 同样的，当在 trajectory 增长的过程中又有新增的 Nodes，这些新的 Nodes 也需要跟所有已经 finished 的 submap 做一下 match。
   enum class SubmapState { kActive, kFinished };
+  // 存储与一个 Submap 相关联的 Node
   struct InternalSubmapData {
-    std::shared_ptr<const Submap2D> submap;
+    std::shared_ptr<const Submap2D> submap;  // 共享指针 submap 记录了具体的子图对象
 
     // IDs of the nodes that were inserted into this map together with
     // constraints for them. They are not to be matched again when this submap
     // becomes 'finished'.
-    std::set<NodeId> node_ids;
+    // 插入到此地图中的节点索引及其约束。当该子图“完成”时，将不再匹配它们。
+    //
+    // 所有跟该 submap 有插入关系并存在约束的节点的ID的集合。当这个 submap 被 finished 时他们
+    // 就不用重新跟该 submap 进行 match，而只需 match 新的 node 并把他们加入相应 submap 的这个集合中。
+    std::set<NodeId> node_ids;  // 容器 node_ids 记录了所有直接插入 submap 的节点
 
-    SubmapState state = SubmapState::kActive;
+    // 默认情况，submap 是 kActive，除非满足一定条件后把它置为 kFinished。
+    //
+    // 子图的状态主要是给后台的线程提供的。一开始子图的状态都是 kActive 的，当它切换到 kFinished 的状态下后
+    // 就会与所有的节点进行一次扫描匹配操作。此外新增的节点也会与所有 kFinished 状态的子图进行扫描匹配。
+    // 这一操作我们可以理解为是进行闭环检测，通过遍历与所有的 kFinished 状态的子图，或者节点，
+    // 应当可以找到发生闭环的地点并建立一个约束来描述。
+    SubmapState state = SubmapState::kActive;  // 枚举 state 记录了子图的状态
   };
 
   MapById<SubmapId, PoseGraphInterface::SubmapData> GetSubmapDataUnderLock()
@@ -220,62 +242,86 @@ class PoseGraph2D : public PoseGraph {
   void UpdateTrajectoryConnectivity(const Constraint& constraint)
       REQUIRES(mutex_);
 
-  const proto::PoseGraphOptions options_;
-  GlobalSlamOptimizationCallback global_slam_optimization_callback_;
-  mutable common::Mutex mutex_;
+  const proto::PoseGraphOptions options_;  // 位姿图的各种配置
+  GlobalSlamOptimizationCallback global_slam_optimization_callback_;  // 完成全局优化后的回调函数
+  mutable common::Mutex mutex_;  // 用于多线程运行时保护重要数据资源的互斥量
 
   // If it exists, further work items must be added to this queue, and will be
   // considered later.
+  // 这是一个智能指针形式的工作队列，用于记录将要完成的任务
   std::unique_ptr<std::deque<std::function<void()>>> work_queue_
       GUARDED_BY(mutex_);
 
   // How our various trajectories are related.
+  // 描述不同轨迹之间的连接状态
   TrajectoryConnectivityState trajectory_connectivity_state_;
 
   // We globally localize a fraction of the nodes from each trajectory.
+  // 这应该是一个以 trajectory_id 为索引的字典，用于对各个轨迹上的部分节点进行全局定位。
   std::unordered_map<int, std::unique_ptr<common::FixedRatioSampler>>
       global_localization_samplers_ GUARDED_BY(mutex_);
 
   // Number of nodes added since last loop closure.
+  // 一个计数器，记录了自从上次闭环检测之后新增的节点数量。
   int num_nodes_since_last_loop_closure_ GUARDED_BY(mutex_) = 0;
 
   // Whether the optimization has to be run before more data is added.
+  // 标识当前是否正在进行闭环检测。
   bool run_loop_closure_ GUARDED_BY(mutex_) = false;
 
   // Schedules optimization (i.e. loop closure) to run.
   void DispatchOptimization() REQUIRES(mutex_);
 
   // Current optimization problem.
+  // 描述当前优化问题的对象，应该是 PoseGraph2D 的核心。
   std::unique_ptr<optimization::OptimizationProblem2D> optimization_problem_;
+  // 约束构造器，用于异步的计算约束。
   constraints::ConstraintBuilder2D constraint_builder_ GUARDED_BY(mutex_);
+  // 记录了位姿图中的所有约束。
   std::vector<Constraint> constraints_ GUARDED_BY(mutex_);
 
   // Submaps get assigned an ID and state as soon as they are seen, even
   // before they take part in the background computations.
+  //
+  // 一个 submap 一旦建立，就会立刻分配一个ID和状态{kActive, kFinished}。submap_data_ 就是存储一个 submap 相关信息。
+  // MapById 定义在“/mapping/id.h”中，是一个工具类，方便管理。
+  //
+  // 该容器记录了所有的子图数据及其内部节点，其中 MapById 是对 std::map 的一个封装，
+  // InternalSubmapData 除了描述了子图的数据之外还记录了所有内部的节点。
   MapById<SubmapId, InternalSubmapData> submap_data_ GUARDED_BY(mutex_);
 
   // Data that are currently being shown.
+  // 记录轨迹节点的容器
   MapById<NodeId, TrajectoryNode> trajectory_nodes_ GUARDED_BY(mutex_);
+  // 节点数
   int num_trajectory_nodes_ GUARDED_BY(mutex_) = 0;
 
   // Global submap poses currently used for displaying data.
+  // 用于显示数据的当前全局子图位姿。会用于在 rviz 中显示建图效果。
+  // 看源码中的注释说该容器主要是为了可视化准备的。那个 SubmapSpec2D 是一个结构体，实际上只有一个字段记录了一个全局位姿。
   MapById<SubmapId, optimization::SubmapSpec2D> global_submap_poses_
       GUARDED_BY(mutex_);
 
   // Global landmark poses with all observations.
+  // 存储所有 landmark 的 Id 及他们的观测数据。
+  // 记录路标点的容器。
   std::map<std::string /* landmark ID */, PoseGraph::LandmarkNode>
       landmark_nodes_ GUARDED_BY(mutex_);
 
   // List of all trimmers to consult when optimizations finish.
+  // 用于指导修饰地图的修饰器。在 map_builder 的接口实现一文中我们曾见到过添加修饰器的操作。
   std::vector<std::unique_ptr<PoseGraphTrimmer>> trimmers_ GUARDED_BY(mutex_);
 
   // Set of all frozen trajectories not being optimized.
+  // 记录所有当前冻结的轨迹。
   std::set<int> frozen_trajectories_ GUARDED_BY(mutex_);
 
   // Set of all finished trajectories.
+  // 记录所有已经完结的轨迹。
   std::set<int> finished_trajectories_ GUARDED_BY(mutex_);
 
   // Set of all initial trajectory poses.
+  // 记录所有轨迹的初始位姿。
   std::map<int, InitialTrajectoryPose> initial_trajectory_poses_
       GUARDED_BY(mutex_);
 

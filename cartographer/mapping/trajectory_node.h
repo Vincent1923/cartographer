@@ -44,18 +44,23 @@ struct TrajectoryNodePose {
 struct TrajectoryNode {
   // TrajectoryNode::Data 是存储这个节点时的状态，包括时间、传感器数据等信息。
   struct Data {
+    // 字段 time 记录了扫描数据被插入子图的时刻，在 TrajectoryNode 中可以通过函数 time() 获取。
     common::Time time;  // 当前帧的时间
 
     // Transform to approximately gravity align the tracking frame as
     // determined by local SLAM.
     // 一个表示旋转矩阵的四元数。该旋转矩阵将非水平面的传感器数据投射到水平面上，
     // 利用IMU的重力传感器可计算出该旋转矩阵。
+    //
+    // 字段 gravity_alignment 是当时的重力方向。
     Eigen::Quaterniond gravity_alignment;
 
     // Used for loop closure in 2D: voxel filtered returns in the
     // 'gravity_alignment' frame.
     // 用于 2D loop closure：“gravity_alignment”坐标系下经过体素滤波后的返回（结果）。
     // 经过水平投射后的点云数据，可用于 2D 情况下做 Loop Closure。
+    //
+    // filtered_gravity_aligned_point_cloud 则是根据重力方向修正之后的点云数据。
     sensor::PointCloud filtered_gravity_aligned_point_cloud;
 
     // Used for loop closure in 3D.
@@ -65,6 +70,8 @@ struct TrajectoryNode {
 
     // The node pose in the local SLAM frame.
     // 节点在 Local SLAM 中的 Pose
+    //
+    // local_pose 则记录了节点在子图中的相对位姿。
     transform::Rigid3d local_pose;
   };
 
