@@ -39,6 +39,12 @@
 namespace cartographer {
 namespace mapping {
 
+// 构造函数
+// 函数体是空的什么也没有做，只是在构造列表中完成了一些成员变量构造。
+// 它有三个输入参数：
+// options 是从配置文件中装载的关于位姿图的配置项，
+// optimization_problem 是一个智能指针指向后端优化问题求解器，
+// thread_pool 则是一个线程池。
 PoseGraph2D::PoseGraph2D(
     const proto::PoseGraphOptions& options,
     std::unique_ptr<optimization::OptimizationProblem2D> optimization_problem,
@@ -100,32 +106,48 @@ std::vector<SubmapId> PoseGraph2D::InitializeGlobalSubmapPoses(
   return {front_submap_id, last_submap_id};
 }
 
+// constant_data 记录了更新子图时的点云信息以及相对位姿，trajectory_id 记录了轨迹索引，insertion_submaps 则是更新的子图。
 NodeId PoseGraph2D::AddNode(
     std::shared_ptr<const TrajectoryNode::Data> constant_data,
     const int trajectory_id,
     const std::vector<std::shared_ptr<const Submap2D>>& insertion_submaps) {
+  // 将局部位姿转换成为世界坐标系下的位姿。
+  // 函数 GetLocalToGlobalTransform() 根据最新一次优化之后的子图位姿生成局部坐标系到世界坐标系的坐标变换关系。
   const transform::Rigid3d optimized_pose(
       GetLocalToGlobalTransform(trajectory_id) * constant_data->local_pose);
 
-  common::MutexLocker locker(&mutex_);
-  AddTrajectoryIfNeeded(trajectory_id);
+  common::MutexLocker locker(&mutex_);   // 接下来先对信号量加锁，以保证多线程的安全。
+  AddTrajectoryIfNeeded(trajectory_id);  // 通过函数 AddTrajectoryIfNeeded() 来维护各个轨迹之间的连接关系
+  // 根据输入的数据和刚刚生成的全局位姿构建一个 TrajectoryNode 的对象，并将之添加到节点的容器 trajectory_nodes_中。
+  // 至此我们就添加了一个新的节点，并为之分配了一个 NodeId。
   const NodeId node_id = trajectory_nodes_.Append(
       trajectory_id, TrajectoryNode{constant_data, optimized_pose});
   ++num_trajectory_nodes_;
 
   // Test if the 'insertion_submap.back()' is one we never saw before.
+  // 输入参数 insertion_submaps.back() 中记录了最新的子图。
+  // 先查询一下容器 submap_data_ 中是否有轨迹索引为 trajectory_id 的子图，再判定 insertion_submaps.back() 中的子图是否是新生成的。
+  // 若是则将之添加到容器 submap_data_ 中，同时分配一个 SubmapId。
   if (submap_data_.SizeOfTrajectoryOrZero(trajectory_id) == 0 ||
       std::prev(submap_data_.EndOfTrajectory(trajectory_id))->data.submap !=
           insertion_submaps.back()) {
     // We grow 'submap_data_' as needed. This code assumes that the first
     // time we see a new submap is as 'insertion_submaps.back()'.
+    // 我们根据需要增长"submap_data_"。此代码假定我们第一次看到新的子图为"insertion_submaps.back()"。
+    // 分配一个 SubmapId
     const SubmapId submap_id =
         submap_data_.Append(trajectory_id, InternalSubmapData());
+    // 将子图 insertion_submaps.back() 添加到容器 submap_data_ 中
     submap_data_.at(submap_id).submap = insertion_submaps.back();
   }
 
   // We have to check this here, because it might have changed by the time we
   // execute the lambda.
+  // 我们必须在此处进行检查，因为在执行 lambda 时可能已更改。
+  //
+  // 最后通过 lambda 表达式和函数 AddWorkItem() 注册一个为新增节点添加约束的任务 ComputeConstraintsForNode()。
+  // 根据 Cartographer 的思想，在该任务下应当会将新增的节点与所有已经处于 kFinished 状态的子图进行一次匹配建立可能存在的闭环约束。
+  // 此外，当有新的子图进入 kFinished 状态时，还会将之与所有的节点进行一次匹配。所以这里会通过 insertion_submaps.front() 来查询旧图的更新状态。
   const bool newly_finished_submap = insertion_submaps.front()->finished();
   AddWorkItem([=]() REQUIRES(mutex_) {
     ComputeConstraintsForNode(node_id, insertion_submaps,
@@ -134,7 +156,11 @@ NodeId PoseGraph2D::AddNode(
   return node_id;
 }
 
+// 输入参数就是一个能够兼容上述 lambda 表达式的 void() 类型的可调用对象。
+// 其工作内容也十分简单，如果工作队列(work_queue_)存在就将任务(work_item)放到队列中，如果不存在就直接执行。
 void PoseGraph2D::AddWorkItem(const std::function<void()>& work_item) {
+  // 这里的工作队列 work_queue_ 是 PoseGraph2D 的一个成员变量，是一个指向双端队列的智能指针。
+  // 在构造函数中没有创建过这一对象，所以一开始都是 nullptr。
   if (work_queue_ == nullptr) {
     work_item();
   } else {
@@ -232,36 +258,52 @@ void PoseGraph2D::ComputeConstraintsForOldNodes(const SubmapId& submap_id) {
   }
 }
 
+// 函数 ComputeConstraintsForNode() 除了有添加约束的作用，还会触发工作队列的构建和运行。
+// node_id 是待更新的节点索引，
+// insertion_submaps 则是从 Local SLAM 一路传递过来的新旧子图，
+// newly_finished_submap 表示旧图是否结束更新了。
 void PoseGraph2D::ComputeConstraintsForNode(
     const NodeId& node_id,
     std::vector<std::shared_ptr<const Submap2D>> insertion_submaps,
     const bool newly_finished_submap) {
+  // 获取节点数据
   const auto& constant_data = trajectory_nodes_.at(node_id).constant_data;
+  // 通过函数 InitializeGlobalSubmapPoses() 获取新旧子图的索引。
+  // 它除了获取ID之外还检查了新子图是否第一次被后端看见，若是则为之计算全局位姿并喂给后端优化器 optimization_problem_。
   const std::vector<SubmapId> submap_ids = InitializeGlobalSubmapPoses(
       node_id.trajectory_id, constant_data->time, insertion_submaps);
   CHECK_EQ(submap_ids.size(), insertion_submaps.size());
+  // 接下来以旧图为参考，计算节点相对于子图的局部位姿 εij，以及它在世界坐标系下的位姿 εsj。并将之提供给后端优化器 optimization_problem_。
   const SubmapId matching_id = submap_ids.front();
+  // 计算节点相对于子图的局部位姿 εij
   const transform::Rigid2d local_pose_2d = transform::Project2D(
       constant_data->local_pose *
       transform::Rigid3d::Rotation(constant_data->gravity_alignment.inverse()));
+  // 计算节点在世界坐标系下的位姿 εsj：当前子图的全局位姿 * 机器人在当前子图的相对位姿
   const transform::Rigid2d global_pose_2d =
       optimization_problem_->submap_data().at(matching_id).global_pose *
       constraints::ComputeSubmapPose(*insertion_submaps.front()).inverse() *
       local_pose_2d;
+  // 把该节点的信息加入到 OptimizationProblem 中，方便进行优化
   optimization_problem_->AddTrajectoryNode(
       matching_id.trajectory_id,
       optimization::NodeSpec2D{constant_data->time, local_pose_2d,
                                global_pose_2d,
                                constant_data->gravity_alignment});
+  // 然后为新增的节点和新旧子图之间添加 INTRA_SUBMAP 类型的约束。
+  // 遍历处理每一个 insertion_submaps
   for (size_t i = 0; i < insertion_submaps.size(); ++i) {
     const SubmapId submap_id = submap_ids[i];
     // Even if this was the last node added to 'submap_id', the submap will
     // only be marked as finished in 'submap_data_' further below.
     CHECK(submap_data_.at(submap_id).state == SubmapState::kActive);
+    // 加入到 PoseGraph 维护的容器中
     submap_data_.at(submap_id).node_ids.emplace(node_id);
+    // 计算相对位姿
     const transform::Rigid2d constraint_transform =
         constraints::ComputeSubmapPose(*insertion_submaps[i]).inverse() *
         local_pose_2d;
+    // 把约束压入约束集合中
     constraints_.push_back(Constraint{submap_id,
                                       node_id,
                                       {transform::Embed3D(constraint_transform),
@@ -270,37 +312,55 @@ void PoseGraph2D::ComputeConstraintsForNode(
                                       Constraint::INTRA_SUBMAP});
   }
 
+  // 紧接着遍历所有已经处于 kFinished 状态的子图，建立它们与新增节点之间可能的约束。
   for (const auto& submap_id_data : submap_data_) {
-    if (submap_id_data.data.state == SubmapState::kFinished) {
-      CHECK_EQ(submap_id_data.data.node_ids.count(node_id), 0);
-      ComputeConstraint(node_id, submap_id_data.id);
+    if (submap_id_data.data.state == SubmapState::kFinished) {   // 确认 submap 已经被 finished 了
+      CHECK_EQ(submap_id_data.data.node_ids.count(node_id), 0);  // 检查该 submap 中还没有跟该节点产生约束
+      ComputeConstraint(node_id, submap_id_data.id);  // 计算该节点与 submap 的约束
     }
   }
 
+  // 如果旧图切换到 kFinished 状态，则遍历所有已经进行过优化的节点，建立它们与旧图之间可能的约束。
+  // 如果有新的刚被 finished 的 submap
   if (newly_finished_submap) {
+    // insertion_maps 中的第一个是 Old 的那个，如果有刚被 finished 的 submap，那一定是它。
     const SubmapId finished_submap_id = submap_ids.front();
+    // 获取该 submap 的数据
     InternalSubmapData& finished_submap_data =
         submap_data_.at(finished_submap_id);
+    // 检查它还是不是 kActive
     CHECK(finished_submap_data.state == SubmapState::kActive);
+    // 把它设置成 kFinished
     finished_submap_data.state = SubmapState::kFinished;
     // We have a new completed submap, so we look into adding constraints for
     // old nodes.
+    // 计算新的 submap 和旧的节点的约束
     ComputeConstraintsForOldNodes(finished_submap_id);
   }
+  // 通知约束构建器新增节点的操作结束
   constraint_builder_.NotifyEndOfNode();
+  // 增加计数器 num_nodes_since_last_loop_closure_
   ++num_nodes_since_last_loop_closure_;
-  CHECK(!run_loop_closure_);
+  CHECK(!run_loop_closure_);  // 检查没进行过 Loop Closure
+  // 如果节点数增长到一定地步，则调用 DispatchOptimization()。
+  // 调用的函数 DispatchOptimization() 对于工作队列的运转有着重要的作用。
+  // optimize_every_n_nodes 在文件 "cartographer/configuration_files/pose_graph.lua" 中配置，默认数值为 90。
   if (options_.optimize_every_n_nodes() > 0 &&
       num_nodes_since_last_loop_closure_ > options_.optimize_every_n_nodes()) {
     DispatchOptimization();
   }
 }
 
+// 我们已经看到函数 AddWorkItem 会根据工作队列是否存在，选择直接运行工作任务还是放到队列中等待以后执行。
+// 当时留下了两个问题，其一这个工作队列是什么时候被创建的？其二队列里的任务是如何调度的？这一切都是从函数 DispatchOptimization 开始的。
 void PoseGraph2D::DispatchOptimization() {
   run_loop_closure_ = true;
   // If there is a 'work_queue_' already, some other thread will take care.
+  // 判定工作队列是否存在，如果不存在就创建一个对象。
   if (work_queue_ == nullptr) {
     work_queue_ = common::make_unique<std::deque<std::function<void()>>>();
+    // 通过约束构建器的 WhenDone() 接口注册了一个回调函数 HandleWorkQueue()
+    // 约束构建器 constraint_builder_ 在后台完成了一些工作之后，就会调用这个函数 HandleWorkQueue，来调度队列里的任务。
     constraint_builder_.WhenDone(
         std::bind(&PoseGraph2D::HandleWorkQueue, this, std::placeholders::_1));
   }
@@ -327,21 +387,33 @@ void PoseGraph2D::UpdateTrajectoryConnectivity(const Constraint& constraint) {
                                          time);
 }
 
+// 以约束构建器的结果为输入参数
+// 输入是由 ConstraintBuilder2D 建立起来的约束向量
 void PoseGraph2D::HandleWorkQueue(
     const constraints::ConstraintBuilder2D::Result& result) {
   {
+    // 在处理数据时加上互斥锁，防止出现数据访问错误
     common::MutexLocker locker(&mutex_);
+    // 将构建的约束添加到容器 constraints_ 中
+    // 把 result 中的所有约束加入到 constraints_ 向量的末尾处
     constraints_.insert(constraints_.end(), result.begin(), result.end());
   }
+  // 调用函数 RunOptimization 进行优化
+  // 执行优化。这里调用了 PoseGraph2D 的另一个成员函数 RunOptimization() 来处理
   RunOptimization();
 
+  // 如果提供了全局优化之后的回调函数，则调用回调函数。
+  // 如果已经设置了全局优化的回调函数。进行一些参数设置后调用该函数。
   if (global_slam_optimization_callback_) {
+    // 设置回调函数的两个参数
+    // 准备 trajectory_id_to_last_optimized_submap_id 和 trajectory_id_to_last_optimized_node_id
     std::map<int, NodeId> trajectory_id_to_last_optimized_node_id;
     std::map<int, SubmapId> trajectory_id_to_last_optimized_submap_id;
     {
       common::MutexLocker locker(&mutex_);
       const auto& submap_data = optimization_problem_->submap_data();
       const auto& node_data = optimization_problem_->node_data();
+      // 把 optimization_problem_ 中的 node 和 submap 的数据拷贝到两个参数中
       for (const int trajectory_id : node_data.trajectory_ids()) {
         trajectory_id_to_last_optimized_node_id[trajectory_id] =
             std::prev(node_data.EndOfTrajectory(trajectory_id))->id;
@@ -349,19 +421,24 @@ void PoseGraph2D::HandleWorkQueue(
             std::prev(submap_data.EndOfTrajectory(trajectory_id))->id;
       }
     }
+    // 调用该回调函数进行处理。猜测应该是更新一下地图结果之类的操作。
     global_slam_optimization_callback_(
         trajectory_id_to_last_optimized_submap_id,
         trajectory_id_to_last_optimized_node_id);
   }
 
+  // 更新轨迹之间的连接关系，并调用修饰器完成地图的修饰。
   common::MutexLocker locker(&mutex_);
+  // 更新 trajectory 之间的 connectivity 信息
   for (const Constraint& constraint : result) {
     UpdateTrajectoryConnectivity(constraint);
   }
+  // 调用 trimmers_ 中每一个 trimmer 的 Trim 函数进行处理。但还是不清楚这个 trimming 的含义是什么。
   TrimmingHandle trimming_handle(this);
   for (auto& trimmer : trimmers_) {
     trimmer->Trim(&trimming_handle);
   }
+  // Trim 之后把他们从 trimmers_ 这个向量中清除，trimmers_ 将重新记录等待新一轮的 Loop Closure 过程中产生的数据
   trimmers_.erase(
       std::remove_if(trimmers_.begin(), trimmers_.end(),
                      [](std::unique_ptr<PoseGraphTrimmer>& trimmer) {
@@ -369,16 +446,22 @@ void PoseGraph2D::HandleWorkQueue(
                      }),
       trimmers_.end());
 
+  // 此时，我们应当是已经完成了一次地图的后端优化。所以需要将计数器 num_nodes_since_last_loop_closure_清零，
+  // 并更新 run_loop_closure_ 表示当前系统空闲没有进行闭环检测。
   num_nodes_since_last_loop_closure_ = 0;
   run_loop_closure_ = false;
+  // 接着就在一个 for 循环中处理掉 work_queue_ 中所有等待的任务，这些任务主要是添加节点、添加传感器数据到位姿图中。
   while (!run_loop_closure_) {
     if (work_queue_->empty()) {
+      // 如果工作队列为空，重置工作队列，返回
       work_queue_.reset();
       return;
     }
+    // 不然的话不停取出队列最前端的任务进行处理，直至所有任务都处理完成
     work_queue_->front()();
     work_queue_->pop_front();
   }
+  // 有时还没有完全处理完队列中的所有任务，就因为状态 run_loop_closure_ 再次为 true 开启新的闭环检测而退出。此时需要重新注册一下回调函数。
   LOG(INFO) << "Remaining work items in queue: " << work_queue_->size();
   // We have to optimize again.
   constraint_builder_.WhenDone(
@@ -549,6 +632,10 @@ void PoseGraph2D::AddTrimmer(std::unique_ptr<PoseGraphTrimmer> trimmer) {
   common::MutexLocker locker(&mutex_);
   // C++11 does not allow us to move a unique_ptr into a lambda.
   PoseGraphTrimmer* const trimmer_ptr = trimmer.release();
+  // 这里的 lambda 表达式描述的是一个 void() 类型的函数，它没有返回值也没有参数列表。
+  // [capture list] 中获取的是在函数体中用到的一些变量。捕获 this 指针，是为了能够访问成员变量 trimmers_，
+  // 而 trimmer_ptr 则是从输入参数中获取的修饰器对象指针。这个表达式的作用就是将传参的修饰器指针放入容器 trimmers_ 中。
+  // 但是 lambda 表达式并不会立即执行，它将被当做一个类似于函数指针或者仿函数这样的可执行对象传参给函数 AddWorkItem，在合适的条件下被调用。
   AddWorkItem([this, trimmer_ptr]()
                   REQUIRES(mutex_) { trimmers_.emplace_back(trimmer_ptr); });
 }
@@ -707,11 +794,15 @@ std::vector<PoseGraphInterface::Constraint> PoseGraph2D::constraints() const {
   return result;
 }
 
+// 指定新的运动轨迹的起始位姿。
+// from_trajectory_id 是新轨迹的索引。剩下三个参数不是很理解，看字面意思是 time 时刻新轨迹起点相对于参考轨迹(to_trajectory_id)的位姿(pose)。
 void PoseGraph2D::SetInitialTrajectoryPose(const int from_trajectory_id,
                                            const int to_trajectory_id,
                                            const transform::Rigid3d& pose,
                                            const common::Time time) {
   common::MutexLocker locker(&mutex_);
+  // 在函数中，直接根据后三个参数创建一个 InitialTrajectoryPose 类型的对象，放置到容器 initial_trajectory_poses_ 中。
+  // initial_trajectory_poses_ 是一个 std::map<int, InitialTrajectoryPose> 类型的容器，记录所有轨迹的初始位姿。
   initial_trajectory_poses_[from_trajectory_id] =
       InitialTrajectoryPose{to_trajectory_id, pose, time};
 }
