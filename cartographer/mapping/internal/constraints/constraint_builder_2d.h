@@ -46,9 +46,11 @@ namespace constraints {
 
 // Returns (map <- submap) where 'submap' is a coordinate system at the origin
 // of the Submap.
+// 返回(map <- submap)，其中"submap"是子图原点的坐标系。
 transform::Rigid2d ComputeSubmapPose(const Submap2D& submap);
 
 // Asynchronously computes constraints.
+// 异步计算约束。
 //
 // Intermingle an arbitrary number of calls to 'MaybeAddConstraint',
 // 'MaybeAddGlobalConstraint', and 'NotifyEndOfNode', then call 'WhenDone' once.
@@ -56,6 +58,9 @@ transform::Rigid2d ComputeSubmapPose(const Submap2D& submap);
 // and another MaybeAdd(Global)Constraint()/WhenDone() cycle can follow.
 //
 // This class is thread-safe.
+//
+// 在任意调用 MaybeAddConstraint、MaybeAddGlobalConstraint、NotifyEndOfNode 之后，调用一次 WhenDone 接口，
+// 来注册回调函数结束一轮操作。如此不断的重复这个过程就可以持续地进行闭环检测，添加必要的约束。
 class ConstraintBuilder2D {
  public:
   using Constraint = PoseGraphInterface::Constraint;
@@ -65,6 +70,7 @@ class ConstraintBuilder2D {
                       common::ThreadPoolInterface* thread_pool);
   ~ConstraintBuilder2D();
 
+  // 类 ConstraintBuilder2D 屏蔽了拷贝构造函数和拷贝赋值操作符。
   ConstraintBuilder2D(const ConstraintBuilder2D&) = delete;
   ConstraintBuilder2D& operator=(const ConstraintBuilder2D&) = delete;
 
@@ -131,11 +137,12 @@ class ConstraintBuilder2D {
 
   void RunWhenDoneCallback() EXCLUDES(mutex_);
 
-  const constraints::proto::ConstraintBuilderOptions options_;
-  common::ThreadPoolInterface* thread_pool_;
-  common::Mutex mutex_;
+  const constraints::proto::ConstraintBuilderOptions options_;  // 关于约束构建器的各种配置
+  common::ThreadPoolInterface* thread_pool_;  // 线程池，用于并行地完成闭环检测
+  common::Mutex mutex_;  // 保护公共资源的互斥量
 
   // 'callback' set by WhenDone().
+  // 通过接口 WhenDone 注册的回调函数对象
   std::unique_ptr<std::function<void(const Result&)>> when_done_
       GUARDED_BY(mutex_);
 
@@ -143,27 +150,30 @@ class ConstraintBuilder2D {
   // Number of the node in reaction to which computations are currently
   // added. This is always the number of nodes seen so far, even when older
   // nodes are matched against a new submap.
-  int num_started_nodes_ GUARDED_BY(mutex_) = 0;
+  int num_started_nodes_ GUARDED_BY(mutex_) = 0;  // 一个计数器，记录了当前需要考虑的轨迹节点数量。
 
-  int num_finished_nodes_ GUARDED_BY(mutex_) = 0;
+  int num_finished_nodes_ GUARDED_BY(mutex_) = 0;  // 一个计数器，记录了当前已完成约束计算的轨迹节点数量。
 
-  std::unique_ptr<common::Task> finish_node_task_ GUARDED_BY(mutex_);
+  std::unique_ptr<common::Task> finish_node_task_ GUARDED_BY(mutex_);  // 完成轨迹节点约束计算的任务状态机
 
-  std::unique_ptr<common::Task> when_done_task_ GUARDED_BY(mutex_);
+  std::unique_ptr<common::Task> when_done_task_ GUARDED_BY(mutex_);  // WhenDone 的任务状态机
 
   // Constraints currently being computed in the background. A deque is used to
   // keep pointers valid when adding more entries. Constraint search results
   // with below-threshold scores are also 'nullptr'.
+  // 用于保存后台计算的约束的双端队列
   std::deque<std::unique_ptr<Constraint>> constraints_ GUARDED_BY(mutex_);
 
   // Map of dispatched or constructed scan matchers by 'submap_id'.
+  // 记录各个子图的扫描匹配器的容器，以 SubmapId 为索引。
   std::map<SubmapId, SubmapScanMatcher> submap_scan_matchers_
       GUARDED_BY(mutex_);
 
-  common::FixedRatioSampler sampler_;
-  scan_matching::CeresScanMatcher2D ceres_scan_matcher_;
+  common::FixedRatioSampler sampler_;  // 采样器
+  scan_matching::CeresScanMatcher2D ceres_scan_matcher_;  // 基于Ceres库的扫描匹配器
 
   // Histogram of scan matcher scores.
+  // 扫描匹配得分的直方图
   common::Histogram score_histogram_ GUARDED_BY(mutex_);
 };
 
