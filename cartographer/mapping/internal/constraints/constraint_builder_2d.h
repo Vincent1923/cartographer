@@ -112,11 +112,12 @@ class ConstraintBuilder2D {
   static void RegisterMetrics(metrics::FamilyFactory* family_factory);
 
  private:
+  // 扫描匹配器
   struct SubmapScanMatcher {
-    const Grid2D* grid;
+    const Grid2D* grid;  // 记录子图的占用栅格
     std::unique_ptr<scan_matching::FastCorrelativeScanMatcher2D>
-        fast_correlative_scan_matcher;
-    std::weak_ptr<common::Task> creation_task_handle;
+        fast_correlative_scan_matcher;  // 扫描匹配器内核
+    std::weak_ptr<common::Task> creation_task_handle;  // 线程池任务句柄
   };
 
   // The returned 'grid' and 'fast_correlative_scan_matcher' must only be

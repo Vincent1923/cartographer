@@ -84,20 +84,21 @@ struct Candidate2D {
                     search_parameters.angular_perturbation_step_size) {}
 
   // Index into the rotated scans vector.
-  int scan_index = 0;
+  int scan_index = 0;  // 角度的搜索索引 jθ
 
   // Linear offset from the initial pose.
-  int x_index_offset = 0;
-  int y_index_offset = 0;
+  int x_index_offset = 0;  // x轴的搜索索引 jx
+  int y_index_offset = 0;  // y轴的搜索索引 jy
 
   // Pose of this Candidate2D relative to the initial pose.
-  double x = 0.;
-  double y = 0.;
-  double orientation = 0.;
+  double x = 0.;  // 相对于初始位姿的x偏移量 rjx
+  double y = 0.;  // 相对于初始位姿的y偏移量 rjy
+  double orientation = 0.;  // 相对于初始位姿的角度偏移量 δθjθ
 
   // Score, higher is better.
-  float score = 0.f;
+  float score = 0.f;  // 候选点的评分，越高越好
 
+  // 定义了两个比较操作符的重载用于方便比较候选点的优劣
   bool operator<(const Candidate2D& other) const { return score < other.score; }
   bool operator>(const Candidate2D& other) const { return score > other.score; }
 };
