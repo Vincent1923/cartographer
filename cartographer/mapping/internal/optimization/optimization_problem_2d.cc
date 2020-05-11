@@ -141,10 +141,12 @@ void AddLandmarkCostFunctions(
 
 }  // namespace
 
+// 构造函数，保存了各种配置
 OptimizationProblem2D::OptimizationProblem2D(
     const proto::OptimizationProblemOptions& options)
     : options_(options) {}
 
+// 析够函数
 OptimizationProblem2D::~OptimizationProblem2D() {}
 
 void OptimizationProblem2D::AddImuData(const int trajectory_id,
@@ -193,31 +195,42 @@ void OptimizationProblem2D::SetMaxNumIterations(
       max_num_iterations);
 }
 
+// 在函数 Solve 中，Cartographer 通过 Ceres 库进行优化，调整子图和路径节点的世界位姿。它有三个参数。
+// constraints 是位姿图的约束，frozen_trajectories 是运动轨迹，landmark_nodes 是路标点。
 void OptimizationProblem2D::Solve(
     const std::vector<Constraint>& constraints,
     const std::set<int>& frozen_trajectories,
     const std::map<std::string, LandmarkNode>& landmark_nodes) {
+  // 在函数的一开始如果发现路径节点为空，就没必要进行优化了
   if (node_data_.empty()) {
     // Nothing to optimize.
     return;
   }
 
+  // 根据 Ceres 库的使用套路，先创建优化问题对象。
   ceres::Problem::Options problem_options;
-  ceres::Problem problem(problem_options);
+  ceres::Problem problem(problem_options);  // 构建最小二乘问题
 
   // Set the starting point.
   // TODO(hrapp): Move ceres data into SubmapSpec.
+  // 创建了一些临时的变量，用于描述优化问题
   MapById<SubmapId, std::array<double, 3>> C_submaps;
   MapById<NodeId, std::array<double, 3>> C_nodes;
   std::map<std::string, CeresPose> C_landmarks;
   bool first_submap = true;
   bool freeze_landmarks = !frozen_trajectories.empty();
+  // 在一个 for 循环中，我们遍历所有的子图 submap_data_，将子图的全局位姿放置到刚刚构建的临时容器 C_submaps 中，
+  // 并通过 AddParameterBlock 显式的将子图全局位姿作为优化参数告知对象 problem。
   for (const auto& submap_id_data : submap_data_) {
     const bool frozen =
         frozen_trajectories.count(submap_id_data.id.trajectory_id) != 0;
+    // 将子图的全局位姿放置到刚刚构建的临时容器 C_submaps 中
     C_submaps.Insert(submap_id_data.id,
                      FromPose(submap_id_data.data.global_pose));
+    // 通过 AddParameterBlock 显式的将子图全局位姿作为优化参数告知对象 problem
     problem.AddParameterBlock(C_submaps.at(submap_id_data.id).data(), 3);
+    // 如果是第一幅子图，或者已经冻结了，就通过 SetParameterBlockConstant 将对应的参数设定为常量，
+    // 那么 Ceres 在迭代求解的过程中将不会改变这些参数。
     if (first_submap || frozen) {
       first_submap = false;
       // Fix the pose of the first submap or all submaps of a frozen
@@ -225,31 +238,46 @@ void OptimizationProblem2D::Solve(
       problem.SetParameterBlockConstant(C_submaps.at(submap_id_data.id).data());
     }
   }
+  // 同样的遍历所有的路径节点 node_data_，将它们的全局位姿放置到临时容器 C_nodes 中，并作为优化参数告知对象 problem。
+  // 如果该节点所在的路径被冻结了，就将它所对应的优化参数设为常量。
   for (const auto& node_id_data : node_data_) {
     const bool frozen =
         frozen_trajectories.count(node_id_data.id.trajectory_id) != 0;
+    // 将路径节点的全局位姿放置到临时容器 C_nodes 中
     C_nodes.Insert(node_id_data.id, FromPose(node_id_data.data.global_pose_2d));
+    // 通过 AddParameterBlock 显式的将路径节点的全局位姿作为优化参数告知对象 problem
     problem.AddParameterBlock(C_nodes.at(node_id_data.id).data(), 3);
+    // 如果冻结了，就通过 SetParameterBlockConstant 将对应的参数设定为常量，
+    // 那么 Ceres 在迭代求解的过程中将不会改变这些参数。
     if (frozen) {
       problem.SetParameterBlockConstant(C_nodes.at(node_id_data.id).data());
     }
   }
   // Add cost functions for intra- and inter-submap constraints.
+  // 遍历所有的约束，描述优化问题的残差块
   for (const Constraint& constraint : constraints) {
+    // problem 对象的接口 AddResidualBlock 描述各个残差项的计算方式。
+    // 这个接口有三个参数，都是通过指针的形式提供对象。针对每个残差项，我们都需要提供一个代价函数以及核函数的对象。
+    // 而最后一个参数 params 则是所有残差项共有的，它就是我们希望优化的参数，在这里为最后的两项 C_submaps 和 C_nodes。
     problem.AddResidualBlock(
-        CreateAutoDiffSpaCostFunction(constraint.pose),
+        // 函数 CreateAutoDiffSpaCostFunction 用于提供对应约束的 SPA 代价计算
+        CreateAutoDiffSpaCostFunction(constraint.pose),  // 代价函数
         // Only loop closure constraints should have a loss function.
+        // 如果是通过闭环检测构建的约束，则为之提供一个 Huber 的核函数，用于降低错误的闭环检测对最终的优化结果带来的负面影响。
         constraint.tag == Constraint::INTER_SUBMAP
             ? new ceres::HuberLoss(options_.huber_scale())
-            : nullptr,
-        C_submaps.at(constraint.submap_id).data(),
+            : nullptr,                              // 核函数
+        C_submaps.at(constraint.submap_id).data(),  // 最后两个为待估计参数
         C_nodes.at(constraint.node_id).data());
   }
   // Add cost functions for landmarks.
+  // 调用成员函数 AddLandmarkCostFunctions，根据路标点添加残差项。
   AddLandmarkCostFunctions(landmark_nodes, freeze_landmarks, node_data_,
                            &C_nodes, &C_landmarks, &problem);
   // Add penalties for violating odometry or changes between consecutive nodes
   // if odometry is not available.
+  // 遍历所有的路径节点，根据 Local SLAM 以及里程计等局部定位的信息建立相邻的路径节点之间的位姿变换关系。
+  // 并将之描述为残差项提供给 problem 对象。
   for (auto node_it = node_data_.begin(); node_it != node_data_.end();) {
     const int trajectory_id = node_it->id.trajectory_id;
     const auto trajectory_end = node_data_.EndOfTrajectory(trajectory_id);
@@ -271,6 +299,7 @@ void OptimizationProblem2D::Solve(
       }
 
       // Add a relative pose constraint based on the odometry (if available).
+      // 根据里程计的局部定位的信息建立相邻的路径节点之间的位姿变换关系，并将之描述为残差项提供给 problem 对象。
       std::unique_ptr<transform::Rigid3d> relative_odometry =
           CalculateOdometryBetweenNodes(trajectory_id, first_node_data,
                                         second_node_data);
@@ -284,6 +313,7 @@ void OptimizationProblem2D::Solve(
       }
 
       // Add a relative pose constraint based on consecutive local SLAM poses.
+      // 根据 Local SLAM 的局部定位的信息建立相邻的路径节点之间的位姿变换关系，并将之描述为残差项提供给 problem 对象。
       const transform::Rigid3d relative_local_slam_pose =
           transform::Embed3D(first_node_data.local_pose_2d.inverse() *
                              second_node_data.local_pose_2d);
@@ -298,7 +328,9 @@ void OptimizationProblem2D::Solve(
   }
 
   // Solve.
-  ceres::Solver::Summary summary;
+  // 在描述完优化参数和残差计算方式之后，我们就可以通过 ceres 求解优化问题。局部对象 summary 将记录整个求解过程。
+  ceres::Solver::Summary summary;  // 优化信息
+  // 开始优化
   ceres::Solve(
       common::CreateCeresSolverOptions(options_.ceres_solver_options()),
       &problem, &summary);
@@ -307,6 +339,7 @@ void OptimizationProblem2D::Solve(
   }
 
   // Store the result.
+  // 最后记录下优化结果。
   for (const auto& C_submap_id_data : C_submaps) {
     submap_data_.at(C_submap_id_data.id).global_pose =
         ToPose(C_submap_id_data.data);

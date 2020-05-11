@@ -40,17 +40,22 @@ namespace cartographer {
 namespace mapping {
 namespace optimization {
 
+// NodeSpec2D 描述路径节点的位姿
 struct NodeSpec2D {
-  common::Time time;
-  transform::Rigid2d local_pose_2d;
-  transform::Rigid2d global_pose_2d;
-  Eigen::Quaterniond gravity_alignment;
+  common::Time time;                     // 产生节点的时间
+  transform::Rigid2d local_pose_2d;      // 局部的位姿
+  transform::Rigid2d global_pose_2d;     // 全局的位姿
+  Eigen::Quaterniond gravity_alignment;  // 重力方向
 };
 
+// SubmapSpec2D 用于描述子图的位姿
 struct SubmapSpec2D {
-  transform::Rigid2d global_pose;
+  transform::Rigid2d global_pose;  // 子图在世界坐标系中的位姿
 };
 
+// 后端优化器对象 optimization_problem_ 的数据类型是 OptimizationProblem2D，派生自模板类 OptimizationProblemInterface。
+// 该模板类有三个模板参数，其中 NodeSpec2D 和 SubmapSpec2D 分别用于描述路径节点和子图的位姿，
+// transform::Rigid2d 则说明了描述相对位姿的数据类型。
 class OptimizationProblem2D
     : public OptimizationProblemInterface<NodeSpec2D, SubmapSpec2D,
                                           transform::Rigid2d> {
@@ -59,6 +64,7 @@ class OptimizationProblem2D
       const optimization::proto::OptimizationProblemOptions& options);
   ~OptimizationProblem2D();
 
+  // 屏蔽了拷贝构造和拷贝赋值
   OptimizationProblem2D(const OptimizationProblem2D&) = delete;
   OptimizationProblem2D& operator=(const OptimizationProblem2D&) = delete;
 
@@ -108,12 +114,12 @@ class OptimizationProblem2D
       int trajectory_id, const NodeSpec2D& first_node_data,
       const NodeSpec2D& second_node_data) const;
 
-  optimization::proto::OptimizationProblemOptions options_;
-  MapById<NodeId, NodeSpec2D> node_data_;
-  MapById<SubmapId, SubmapSpec2D> submap_data_;
-  std::map<std::string, transform::Rigid3d> landmark_data_;
-  sensor::MapByTime<sensor::ImuData> imu_data_;
-  sensor::MapByTime<sensor::OdometryData> odometry_data_;
+  optimization::proto::OptimizationProblemOptions options_;  // 后端优化问题求解器的各种配置
+  MapById<NodeId, NodeSpec2D> node_data_;                    // 记录路径节点的位姿信息的容器
+  MapById<SubmapId, SubmapSpec2D> submap_data_;              // 记录子图位姿信息的容器
+  std::map<std::string, transform::Rigid3d> landmark_data_;  // 记录路标点信息的容器
+  sensor::MapByTime<sensor::ImuData> imu_data_;              // 根据时间关系记录的 IMU 数据
+  sensor::MapByTime<sensor::OdometryData> odometry_data_;    // 根据时间关系记录的里程计数据
 };
 
 }  // namespace optimization

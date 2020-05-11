@@ -59,46 +59,70 @@ PoseGraph2D::~PoseGraph2D() {
   CHECK(work_queue_ == nullptr);
 }
 
+// 将子图的初始位姿提供给后端优化器，有三个输入参数。
+// trajectory_id 是运行轨迹的索引，
+// time 则是调用 AddNode 时对应路径节点的时间戳，
+// insertion_submaps 则是从 Local SLAM 一路传递过来的新旧子图。
+// 该函数的输出是一个 vector 容器，它将记录 insertion_submaps 中各个子图分配的 SubmapId。
 std::vector<SubmapId> PoseGraph2D::InitializeGlobalSubmapPoses(
     const int trajectory_id, const common::Time time,
     const std::vector<std::shared_ptr<const Submap2D>>& insertion_submaps) {
+  // 检查 insertion_submaps 非空
   CHECK(!insertion_submaps.empty());
+  // 并获取后端优化器的子图位姿信息记录到临时对象 submap_data 中。
   const auto& submap_data = optimization_problem_->submap_data();
+  // 根据 Local SLAM 中子图的维护方式，如果输入参数 insertion_submaps 中只有一个子图，意味着重新开始了一条新的轨迹。
   if (insertion_submaps.size() == 1) {
     // If we don't already have an entry for the first submap, add one.
+    // 此时检查后端优化器中是否已经存在一条索引为 trajectory_id 的轨迹，若没有则创建一个。
     if (submap_data.SizeOfTrajectoryOrZero(trajectory_id) == 0) {
+      // 检查 trajectory_id 是否与之前的轨迹有关联，若有则根据 initial_trajectory_poses_ 的描述构建连接关系
       if (initial_trajectory_poses_.count(trajectory_id) > 0) {
         trajectory_connectivity_state_.Connect(
             trajectory_id,
             initial_trajectory_poses_.at(trajectory_id).to_trajectory_id, time);
       }
+      // 通过后端优化器的接口 AddSubmap 创建一条新的轨迹，并将子图的全局位姿信息喂给优化器。
       optimization_problem_->AddSubmap(
           trajectory_id,
           transform::Project2D(ComputeLocalToGlobalTransform(
                                    global_submap_poses_, trajectory_id) *
                                insertion_submaps[0]->local_pose()));
     }
+    // 检查一下数据关系，为新建的子图赋予唯一的 SubmapId，并返回之。
     CHECK_EQ(1, submap_data.SizeOfTrajectoryOrZero(trajectory_id));
     const SubmapId submap_id{trajectory_id, 0};
     CHECK(submap_data_.at(submap_id).submap == insertion_submaps.front());
     return {submap_id};
   }
+  // 如果函数的控制流走到了下面的代码片段，说明 trajectory_id 下已经至少有了一个子图，
+  // 此时输入的 insertion_submaps 中应当有两个子图，也就是 Local SLAM 中维护的新旧子图。
   CHECK_EQ(2, insertion_submaps.size());
   const auto end_it = submap_data.EndOfTrajectory(trajectory_id);
   CHECK(submap_data.BeginOfTrajectory(trajectory_id) != end_it);
+  // 用局部变量 last_submap_id 记录下后端优化器中最新子图的索引。
   const SubmapId last_submap_id = std::prev(end_it)->id;
+  // 然后根据 last_submap_id 检查一下后端优化器中最新的子图是否与 insertion_submaps 中的旧图是同一个对象。
+  // submap_data_.at(last_submap_id).submap 是后端优化器中最新的子图，insertion_submaps.front() 是输入的旧图。
   if (submap_data_.at(last_submap_id).submap == insertion_submaps.front()) {
     // In this case, 'last_submap_id' is the ID of
     // 'insertions_submaps.front()' and 'insertions_submaps.back()' is new.
+    // 若是，则说明新图是 Local SLAM 新建的子图，后端尚未记录。此时需要将新图的全局位姿提供给后端优化器，并分配一个 SubmapId。
+    // 然后将新旧子图的 SubmapId 放到容器中一并返回。
+    // first_submap_pose 是旧图的全局位姿。
     const auto& first_submap_pose = submap_data.at(last_submap_id).global_pose;
+    // 将新图的全局位姿提供给后端优化器，并分配一个 SubmapId
     optimization_problem_->AddSubmap(
         trajectory_id,
+        // 计算新图的全局位姿
         first_submap_pose *
             constraints::ComputeSubmapPose(*insertion_submaps[0]).inverse() *
             constraints::ComputeSubmapPose(*insertion_submaps[1]));
+    // 将新旧子图的 SubmapId 放到容器中一并返回
     return {last_submap_id,
             SubmapId{trajectory_id, last_submap_id.submap_index + 1}};
   }
+  // 最后只剩下一种情况，Local SLAM 并没有再新建子图了，此时后端中记录了所有的子图，只需要将新旧子图对应的 SubmapId 返回即可。
   CHECK(submap_data_.at(last_submap_id).submap == insertion_submaps.back());
   const SubmapId front_submap_id{trajectory_id,
                                  last_submap_id.submap_index - 1};
@@ -659,6 +683,7 @@ void PoseGraph2D::RunFinalOptimization() {
 }
 
 void PoseGraph2D::RunOptimization() {
+  // 先检查一下是否给后端优化器喂过数据
   if (optimization_problem_->submap_data().empty()) {
     return;
   }
@@ -667,13 +692,24 @@ void PoseGraph2D::RunOptimization() {
   // frozen_trajectories_ and landmark_nodes_ when executing the Solve. Solve is
   // time consuming, so not taking the mutex before Solve to avoid blocking
   // foreground processing.
+  // 程序运行到这里的时候，实际上没有其他线程访问对象 optimization_problem_, constraints_, frozen_trajectories_
+  // 和 landmark_nodes_这四个对象。又因为这个 Solve 接口实在太耗时了，所以没有在该函数之前加锁，以防止阻塞其他任务。
+  //
+  // 通过后端优化器的接口 Solve 进行 SPA 优化。
   optimization_problem_->Solve(constraints_, frozen_trajectories_,
                                landmark_nodes_);
   common::MutexLocker locker(&mutex_);
 
+  // 需要完成框图中 Global SLAM 的第三个任务，对在后端进行 SPA 优化过程中新增的节点的位姿进行调整，以适应优化后的世界地图和运动轨迹。
+  // 获取后端优化器中子图和路径节点的数据，用临时对象 submap_data 和 node_data 记录之。
+  // submap_data 是优化后的子图位姿，类型为 MapById<SubmapId, SubmapSpec2D>
+  // node_data 是优化后的轨迹节点位姿，类型为 MapById<NodeId, NodeSpec2D>
   const auto& submap_data = optimization_problem_->submap_data();
   const auto& node_data = optimization_problem_->node_data();
+  // 遍历所有的轨迹
   for (const int trajectory_id : node_data.trajectory_ids()) {
+    // 先在一个 for 循环中遍历所有的节点，用优化后的位姿来更新轨迹点的世界坐标。
+    // 即用优化后的轨迹节点的位姿 node_data 来更新轨迹节点集合 trajectory_nodes_ 中对应 NodeId 的节点位姿。
     for (const auto& node : node_data.trajectory(trajectory_id)) {
       auto& mutable_trajectory_node = trajectory_nodes_.at(node.id);
       mutable_trajectory_node.global_pose =
@@ -684,26 +720,38 @@ void PoseGraph2D::RunOptimization() {
 
     // Extrapolate all point cloud poses that were not included in the
     // 'optimization_problem_' yet.
+    // 外推所有尚未包含在“optimization_problem_”中的点云位姿
+    //
+    // 计算 SPA 优化前后的世界坐标变换关系，并将之左乘在后来新增的路径节点的全局位姿上，得到修正后的轨迹。
     const auto local_to_new_global =
         ComputeLocalToGlobalTransform(submap_data, trajectory_id);
     const auto local_to_old_global =
         ComputeLocalToGlobalTransform(global_submap_poses_, trajectory_id);
+    // 计算 SPA 优化前后的世界坐标变换关系，old_global_to_new_global 表示优化前的全局位姿到优化后的全局位姿的变换
     const transform::Rigid3d old_global_to_new_global =
         local_to_new_global * local_to_old_global.inverse();
 
+    // last_optimized_node_id 是优化后的轨迹节点的位姿 node_data 的最后一个元素的 id
+    // std::prev 返回迭代器的上一个元素
     const NodeId last_optimized_node_id =
         std::prev(node_data.EndOfTrajectory(trajectory_id))->id;
+    // node_it 是优化后的轨迹节点的位姿 node_data 的最后一个元素的下一个元素，即后来新增的还没有经过后端优化器处理的路径节点
+    // std::next 返回迭代器的下一个元素
     auto node_it = std::next(trajectory_nodes_.find(last_optimized_node_id));
+    // 遍历 trajectory_nodes_ 中后来新增的还没有经过后端优化器处理的路径节点
     for (; node_it != trajectory_nodes_.EndOfTrajectory(trajectory_id);
          ++node_it) {
       auto& mutable_trajectory_node = trajectory_nodes_.at(node_it->id);
+      // 将 SPA 优化前后的世界坐标变换关系左乘在后来新增的路径节点的全局位姿上，得到修正后的轨迹。
       mutable_trajectory_node.global_pose =
           old_global_to_new_global * mutable_trajectory_node.global_pose;
     }
   }
+  // 更新路标位姿
   for (const auto& landmark : optimization_problem_->landmark_data()) {
     landmark_nodes_[landmark.first].global_landmark_pose = landmark.second;
   }
+  // 用成员变量 global_submap_poses_ 记录下当前的子图位姿
   global_submap_poses_ = submap_data;
 }
 
