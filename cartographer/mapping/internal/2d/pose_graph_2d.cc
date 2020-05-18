@@ -170,6 +170,8 @@ NodeId PoseGraph2D::AddNode(
   // 我们必须在此处进行检查，因为在执行 lambda 时可能已更改。
   //
   // 最后通过 lambda 表达式和函数 AddWorkItem() 注册一个为新增节点添加约束的任务 ComputeConstraintsForNode()。
+  // lambda 表达式中[函数对象参数]为[=]，表示函数体内可以使用 Lambda 所在范围内所有可见的局部变量（包括 Lambda 所在类的 this），
+  // 并且是值传递方式（相当于编译器自动为我们按值传递了所有局部变量）。
   // 根据 Cartographer 的思想，在该任务下应当会将新增的节点与所有已经处于 kFinished 状态的子图进行一次匹配建立可能存在的闭环约束。
   // 此外，当有新的子图进入 kFinished 状态时，还会将之与所有的节点进行一次匹配。所以这里会通过 insertion_submaps.front() 来查询旧图的更新状态。
   const bool newly_finished_submap = insertion_submaps.front()->finished();
@@ -292,42 +294,43 @@ void PoseGraph2D::ComputeConstraintsForNode(
     const bool newly_finished_submap) {
   // 获取节点数据
   const auto& constant_data = trajectory_nodes_.at(node_id).constant_data;
-  // 通过函数 InitializeGlobalSubmapPoses() 获取新旧子图的索引。
+  // 通过函数 InitializeGlobalSubmapPoses() 获取新旧子图的索引。submap_ids 记录了新旧子图的索引。
   // 它除了获取ID之外还检查了新子图是否第一次被后端看见，若是则为之计算全局位姿并喂给后端优化器 optimization_problem_。
   const std::vector<SubmapId> submap_ids = InitializeGlobalSubmapPoses(
       node_id.trajectory_id, constant_data->time, insertion_submaps);
-  CHECK_EQ(submap_ids.size(), insertion_submaps.size());
+  CHECK_EQ(submap_ids.size(), insertion_submaps.size());  // 检查刚获取的新旧子图索引的数量是否等于输入子图数量
   // 接下来以旧图为参考，计算节点相对于子图的局部位姿 εij，以及它在世界坐标系下的位姿 εsj。并将之提供给后端优化器 optimization_problem_。
-  const SubmapId matching_id = submap_ids.front();
-  // 计算节点相对于子图的局部位姿 εij
+  const SubmapId matching_id = submap_ids.front();  // 旧图的索引
+  // 计算节点相对于子图的局部位姿 εij？（还是节点在自己的局部坐标系的位姿？）
   const transform::Rigid2d local_pose_2d = transform::Project2D(
       constant_data->local_pose *
       transform::Rigid3d::Rotation(constant_data->gravity_alignment.inverse()));
   // 计算节点在世界坐标系下的位姿 εsj：当前子图的全局位姿 * 机器人在当前子图的相对位姿
   const transform::Rigid2d global_pose_2d =
-      optimization_problem_->submap_data().at(matching_id).global_pose *
-      constraints::ComputeSubmapPose(*insertion_submaps.front()).inverse() *
-      local_pose_2d;
-  // 把该节点的信息加入到 OptimizationProblem 中，方便进行优化
+      optimization_problem_->submap_data().at(matching_id).global_pose *      // 经过后端优化后的旧图的全局位姿
+      constraints::ComputeSubmapPose(*insertion_submaps.front()).inverse() *  // 旧图的局部位姿的逆
+      local_pose_2d;                                                          // 节点相对于子图的局部位姿
+  // 把节点相对于子图的局部位姿 εij 以及在世界坐标系下的位姿 εsj 提供给后端优化器 optimization_problem_
   optimization_problem_->AddTrajectoryNode(
       matching_id.trajectory_id,
       optimization::NodeSpec2D{constant_data->time, local_pose_2d,
                                global_pose_2d,
                                constant_data->gravity_alignment});
   // 然后为新增的节点和新旧子图之间添加 INTRA_SUBMAP 类型的约束。
-  // 遍历处理每一个 insertion_submaps
+  // 遍历处理每一个 insertion_submaps，实际上只有2个
   for (size_t i = 0; i < insertion_submaps.size(); ++i) {
     const SubmapId submap_id = submap_ids[i];
     // Even if this was the last node added to 'submap_id', the submap will
     // only be marked as finished in 'submap_data_' further below.
+    // 即使这是添加到“submap_id”的最后一个节点，该子图也只会在下面的“submap_data_”中标记为 finished。
     CHECK(submap_data_.at(submap_id).state == SubmapState::kActive);
-    // 加入到 PoseGraph 维护的容器中
+    // 把新添加的节点 node_id 加入到 submap_data_ 对应的子图数据中
     submap_data_.at(submap_id).node_ids.emplace(node_id);
-    // 计算相对位姿
+    // 计算节点相对于子图的相对位姿 εij
     const transform::Rigid2d constraint_transform =
         constraints::ComputeSubmapPose(*insertion_submaps[i]).inverse() *
         local_pose_2d;
-    // 把约束压入约束集合中
+    // 把约束压入约束集合中，节点 node_id 和子图 submap_id 建立起 INTRA_SUBMAP 类型的约束。
     constraints_.push_back(Constraint{submap_id,
                                       node_id,
                                       {transform::Embed3D(constraint_transform),
@@ -338,9 +341,9 @@ void PoseGraph2D::ComputeConstraintsForNode(
 
   // 紧接着遍历所有已经处于 kFinished 状态的子图，建立它们与新增节点之间可能的约束。
   for (const auto& submap_id_data : submap_data_) {
-    if (submap_id_data.data.state == SubmapState::kFinished) {   // 确认 submap 已经被 finished 了
-      CHECK_EQ(submap_id_data.data.node_ids.count(node_id), 0);  // 检查该 submap 中还没有跟该节点产生约束
-      ComputeConstraint(node_id, submap_id_data.id);  // 计算该节点与 submap 的约束
+    if (submap_id_data.data.state == SubmapState::kFinished) {   // 筛选出处于 kFinished 状态的子图
+      CHECK_EQ(submap_id_data.data.node_ids.count(node_id), 0);  // 检查该子图还没有跟该节点产生约束
+      ComputeConstraint(node_id, submap_id_data.id);  // 计算该节点与子图的约束
     }
   }
 
