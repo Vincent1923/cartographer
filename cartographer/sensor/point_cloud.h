@@ -38,12 +38,15 @@ typedef std::vector<Eigen::Vector3f> PointCloud;
 // If timing is not available, all fourth entries are 0.f. For 2D points, the
 // third entry is 0.f (and the fourth entry is time).
 // 前三项存储点的3D位置，第四项存储相对测量时间。时间以秒为单位，每一个点和获取最后一点的时间相比较，每一个点的时间逐渐增加。
-// 因此，最后一点的第四项是0.f。如果计时不可用，则所有第四项均为0.f。对于2D点，第三项是0.f（第四项是时间）。
+// 因此，最后一个点的第四项是0.f。如果计时不可用，则所有第四项均为0.f。对于2D点，第三项是0.f（第四项是时间）。
+//
+// 每个元素都是一个4维的向量，其中前三维的数据记录了扫描数据所对应的空间坐标，第四维的数据则记录了数据产生的时间。
 typedef std::vector<Eigen::Vector4f> TimedPointCloud;
 
+// 带相对测量时间和强度的点云数据
 struct PointCloudWithIntensities {
-  TimedPointCloud points;
-  std::vector<float> intensities;
+  TimedPointCloud points;          // 记录了一次扫描的各个测量值，带相对测量时间的点云数据
+  std::vector<float> intensities;  // 描述了 points 中每个元素所对应的数据强度
 };
 
 // Transforms 'point_cloud' according to 'transform'.
