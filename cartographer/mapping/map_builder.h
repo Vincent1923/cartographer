@@ -54,7 +54,7 @@ class MapBuilder : public MapBuilderInterface {
    * @param trajectory_options          新建的轨迹跟踪器的配置，这个参数的数据类型是通过 protobuf 根据 proto 文件生成的，
    *                                    在 "node_main.cc" 中由函数 Run 从配置文件中获取。
    * @param local_slam_result_callback  回调函数对象，用于响应局部地图构建完成的事件
-   * @return
+   * @return                            新建轨迹跟踪器的索引
    */
   int AddTrajectoryBuilder(
       const std::set<SensorId> &expected_sensor_ids,
@@ -65,7 +65,10 @@ class MapBuilder : public MapBuilderInterface {
       const proto::TrajectoryBuilderOptionsWithSensorIds
           &options_with_sensor_ids_proto) override;
 
-  // 标记该轨迹已完成 data 采集，后续不再接收 data
+  /**
+   * @brief FinishTrajectory  关闭 trajectory_id 对应的轨迹跟踪器
+   * @param trajectory_id     要关闭的轨迹跟踪器的索引
+   */
   void FinishTrajectory(int trajectory_id) override;
 
   // 把轨迹 id 和子图索引对应的 submap，序列化到文件
@@ -77,27 +80,27 @@ class MapBuilder : public MapBuilderInterface {
   void LoadState(io::ProtoStreamReaderInterface *reader,
                  bool load_frozen_state) override;
 
-  // 返回一个PoseGraphInterface的接口指针
+  // 获取用于实现闭环检测的 PoseGraph 对象
   mapping::PoseGraphInterface *pose_graph() override {
-    return pose_graph_.get();  // unique_ptr的get函数可返回被管理对象的指针
+    // unique_ptr 的 get() 函数可返回被管理对象的指针
+    return pose_graph_.get();
   }
 
-  // 返回系统中当前已有的 trajectory_builder 的数量，即在建图的轨迹数量
+  // 获取当前轨迹跟踪器的数量
   int num_trajectory_builders() const override {
-    return trajectory_builders_.size();  // 向量的 size 即为 TrajectoryBuilder 的数量
+    return trajectory_builders_.size();
   }
 
-  // 根据轨迹 id trajectory_id 返回一个指向该轨迹的 TrajectoryBuilderInterface 对象指针。
-  // 如果该 trajectory 没有一个 TrajectoryBuilder，则返回 nullptr。
+  // 获取一个索引为 trajectory_id 的轨迹跟踪器对象
   mapping::TrajectoryBuilderInterface *GetTrajectoryBuilder(
       int trajectory_id) const override {
-    return trajectory_builders_.at(trajectory_id).get();  // 从列表中取出指定id的TrajectoryBuilder
+    return trajectory_builders_.at(trajectory_id).get();
   }
 
-  // 获取所有TrajectoryBuilder的配置项
+  // 获取所有的轨迹跟踪器的配置
   const std::vector<proto::TrajectoryBuilderOptionsWithSensorIds>
       &GetAllTrajectoryBuilderOptions() const override {
-    return all_trajectory_builder_options_;  // 所有配置项都存在该向量中
+    return all_trajectory_builder_options_;
   }
 
  private:

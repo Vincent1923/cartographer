@@ -276,11 +276,10 @@ int MapBuilder::AddTrajectoryForDeserialization(
   return trajectory_id;
 }
 
-// 结束一条轨迹；可以看到，分别调用sensor_collator和pose_graph_的成员函数来Finish一条轨迹
+// 关闭 trajectory_id 对应的轨迹跟踪器
 void MapBuilder::FinishTrajectory(const int trajectory_id) {
-  // 现阶段猜测，sensor_collator_->FinishTrajectory应该是做的清除对传感器的占用等操作
+  // 通知 sensor_collator_ 和 pose_graph_ 两个对象终止 trajectory_id 所对应的轨迹处理
   sensor_collator_->FinishTrajectory(trajectory_id);
-  // 现阶段猜测，pose_graph_->FinishTrajectory应该是完成对刚刚的trajectory的全局优化
   pose_graph_->FinishTrajectory(trajectory_id);
 }
 
