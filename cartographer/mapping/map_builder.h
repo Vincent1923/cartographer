@@ -48,12 +48,12 @@ class MapBuilder : public MapBuilderInterface {
   MapBuilder &operator=(const MapBuilder &) = delete;
 
   /**
-   * @brief AddTrajectoryBuilder        创建一个 TrajectoryBuilder 并返回它的 index，即 trajectory_id；
-   *                                    根据传感器 id 和 options 新建一个轨迹线，返回轨迹线的索引。
-   * @param expected_sensor_ids         一条 trajectory 所期望的 SensorIds 集合，即所有输入的传感器数据 topic 名字，
-   *                                    SensorId 把 SensorType 和传感器 topic 名称（类型为std::string）绑定在一起
-   * @param trajectory_options          跟 TrajectoryBuilder 相关的参数配置
-   * @param local_slam_result_callback  回调函数，类型为 std::function
+   * @brief AddTrajectoryBuilder        创建一个新的轨迹跟踪器并返回该跟踪器的索引
+   * @param expected_sensor_ids         记录了用于建图的所有传感器主题名称和类型。结构体 SensorId 有两个字段，
+   *                                    type 通过枚举描述了传感器的类型，id 是一个字符串记录了传感器所对应的 ROS 主题名称。
+   * @param trajectory_options          新建的轨迹跟踪器的配置，这个参数的数据类型是通过 protobuf 根据 proto 文件生成的，
+   *                                    在 "node_main.cc" 中由函数 Run 从配置文件中获取。
+   * @param local_slam_result_callback  回调函数对象，用于响应局部地图构建完成的事件
    * @return
    */
   int AddTrajectoryBuilder(

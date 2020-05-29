@@ -124,31 +124,23 @@ MapBuilder::MapBuilder(const proto::MapBuilderOptions& options)
  * （3）而一个 trajectory 对应了机器人运行一圈。在图建好后机器人可能多次运行。每一次运行都是新增一条 trajectory，
  *     因此，需要动态地维护一个 trajectory 的列表。每生成一个 trajectory 时都是调用 AddTrajectoryBuilder 来创建的。
  */
+// 创建一个新的轨迹跟踪器并返回该跟踪器的索引。它有三个参数，
+// expected_sensor_ids 中记录了用于建图的所有传感器名称和类型，trajectory_options 是新建的轨迹跟踪器的配置，
+// 最后的 local_slam_result_callback 则是一个回调函数对象，用于响应局部地图构建完成的事件。
 int MapBuilder::AddTrajectoryBuilder(
     const std::set<SensorId>& expected_sensor_ids,
     const proto::TrajectoryBuilderOptions& trajectory_options,
     LocalSlamResultCallback local_slam_result_callback) {
-  /*
-   * 生成trajectory_id，trajectory_builders_是一个向量，存着所有的trajectory。
-   * 因此，当有一个新的trajectory时，以向量的size值作为新的trajectory，加入到trajectory_builders_中。
-   */
+  // 先通过容器 trajectory_builders_ 获取轨迹跟踪器的数量。如果构建成功，该值将作为新的跟踪器的索引。
+  // 一般 trajectory_id 的索引从 0 开始。
   const int trajectory_id = trajectory_builders_.size();
   LOG(WARNING) << "MapBuilder::AddTrajectoryBuilder:";
   std::cout << "trajectory_builders_.size(): " << trajectory_builders_.size() << std::endl;
   std::cout << "trajectory_id: " << trajectory_id << std::endl;
   std::cout << "options_.use_trajectory_builder_2d(): " << options_.use_trajectory_builder_2d() << std::endl;
   std::cout << "options_.use_trajectory_builder_3d(): " << options_.use_trajectory_builder_3d() << std::endl;
-  /*
-   * 可以看到，根据是2d建图还是3d建图分为了两种情况。
-   * 针对两种不同的情况，首先建立一个LocalTrajectoryBuilder2D或LocalTrajectoryBuilder3D的变量local_trajectory_builder；
-   * 这个类是不带Loop Closure的Local Slam，包含了Pose Extrapolator，Scan Matching等；
-   * 但注意，这两个类并没有继承TrajectoryBuilder，并不是一个TrajectoryBuilder的实现，而只是一个工具类，
-   * 真正地创建一个TrajectoryBuilder是在后面，trajectory_builders_的push_back函数里面。
-   * 其中CollatedTrajectoryBuilder继承了接口TrajectoryBuilder；而前面生成的local_trajectory_builder
-   * 则用于CreateGlobalTrajectoryBuilder2D函数的第一个参数，用于生成一个CollatedTrajectoryBuilder的智能指针。
-   * CreateGlobalTrajectoryBuilder2D函数定义在/mapping/internal/global_trajectory_builder.h中。
-   */
-  if (options_.use_trajectory_builder_3d()) {  // 根据配置参数选择是3d情况还是2d情况
+  // 根据配置参数选择三维建图还是二维建图，从而创建新的轨迹跟踪器
+  if (options_.use_trajectory_builder_3d()) {  // 进行三维建图，构建轨迹跟踪器
     std::unique_ptr<LocalTrajectoryBuilder3D> local_trajectory_builder;
     if (trajectory_options.has_trajectory_builder_3d_options()) {
       local_trajectory_builder = common::make_unique<LocalTrajectoryBuilder3D>(
@@ -163,35 +155,38 @@ int MapBuilder::AddTrajectoryBuilder(
                 std::move(local_trajectory_builder), trajectory_id,
                 static_cast<PoseGraph3D*>(pose_graph_.get()),
                 local_slam_result_callback)));
-  } else {  // 使用2d的trajectory builder
-    // LocalTrajectoryBuilder2D定义在/mapping/internal/2d/local_trajectory_builder_2d.h中
+  } else {  // 进行二维建图，构建轨迹跟踪器
+    // 先创建一个 LocalTrajectoryBuilder2D 类型的对象。
+    // 这个对象并不是我们一直说的轨迹跟踪器，但它应该是轨迹跟踪器的核心。
+    // 因为它几乎完成了一个局部 SLAM 的所有功能，包括位姿估计、扫描匹配等，就是没有闭环检测。
     std::unique_ptr<LocalTrajectoryBuilder2D> local_trajectory_builder;
-    if (trajectory_options.has_trajectory_builder_2d_options()) {  // 是否有跟该trajectory相关的参数，如果有就设置一下
-      // 根据参数实例化这个LocalTrajectoryBuilder3D的变量
+    if (trajectory_options.has_trajectory_builder_2d_options()) {
+      // 检查是否有关于 2D 的轨迹跟踪器的配置项，如果有的话，就根据其配置项以及传感器配置实例化对象 local_trajectory_builder。
       local_trajectory_builder = common::make_unique<LocalTrajectoryBuilder2D>(
           trajectory_options.trajectory_builder_2d_options(),
-          SelectRangeSensorIds(expected_sensor_ids));  // SelectRangeSensorIds()函数返回expected_sensor_ids中激光的topic名称
+          // SelectRangeSensorIds() 函数返回 expected_sensor_ids 中所有激光传感器主题的名称
+          SelectRangeSensorIds(expected_sensor_ids));
     }
-    // 检查类型转化
-    DCHECK(dynamic_cast<PoseGraph2D*>(pose_graph_.get()));  // dynamic_cast是强制类型转化，把PoseGraphInterface的指针转化为PoseGraph2D
-    // 将生成的 CollatedTrajectoryBuilder 压入向量列表中。
-    // trajectory_builders_ 是一个 std::vector 容器，里面存放的数据类型是 TrajectoryBuilderInterface 类型的智能指针。
+    // 通过 dynamic_cast 将 pose_graph_ 对象强制转换为 PoseGraph2D，并检查数据类型是否正确。
+    // dynamic_cast 是强制类型转化，把 PoseGraphInterface 的指针转化为 PoseGraph2D。
+    DCHECK(dynamic_cast<PoseGraph2D*>(pose_graph_.get()));
+    /**
+     * 1. 创建轨迹跟踪器。
+     * 2. 接下来的语句所构建的 CollatedTrajectoryBuilder 类型的对象才是所谓的轨迹跟踪器，它继承自接口类
+     *    TrajectoryBuilderInterface，这个接口适用于 2D 和 3D 建图的对象，如此上层的代码就不必关心具体的建图内核，
+     *    使用同一个容器 trajectory_builders_ 就可以保存两种 local SLAM 的对象。
+     * 3. 构建好的对象就直接被塞进了容器 trajectory_builders_ 中。
+     * 4. CollatedTrajectoryBuilder 类型有四个输入参数。
+     *    (1)sensor_collator_: 这是一个类型为 sensor::CollatorInterface 的智能指针，该对象在 MapBuilder 的构造函数进行初始化，
+     *                         主要作用是收集传感器数据。
+     *    (2)trajectory_id: 新创建轨迹跟踪器的索引。
+     *    (3)expected_sensor_ids: 记录了用于建图的所有传感器主题名称和类型。
+     *    (4)通过函数 CreateGlobalTrajectoryBuilder2D 构建了一个 GlobalTrajectoryBuilder 类型的对象，
+     *       它继承了 TrajectoryBuilderInterface。从它的参数列表中来看，除了含有刚刚构建的 local_trajectory_builder 对象之外，
+     *       还引入了位姿图对象 pose_graph_。个人猜测这是一个具有闭环功能的 SLAM 对象，所以称之为Global的。
+     */
     trajectory_builders_.push_back(
-        /*
-         * （1）真正地创建一个 TrajectoryBuilderInterface，其中 CollatedTrajectoryBuilder 继承了接口 TrajectoryBuilderInterface。
-         * （2）CollatedTrajectoryBuilder 作用：使用 Collator 处理从传感器收集而来的数据，并传递给 GlobalTrajectoryBuilderInterface。
-         * （3）CollatedTrajectoryBuilder 的构造函数有4个参数：
-         * sensor_collator：传感器收集类实例。
-         * trajectory_id：轨迹索引。
-         * expected_sensor_ids：轨迹上的传感器 id。
-         * wrapped_trajectory_builder：TrajectoryBuilderInterface 的智能指针。
-         */
         common::make_unique<CollatedTrajectoryBuilder>(
-            /*
-             * sensor_collator_ 是一个接口 sensor::CollatorInterface 的智能指针，在 MapBuilder 的构造函数进行初始化。
-             * 它有两种的实现方式，一般方式为 sensor::Collator，即 sensor::Collator 继承了 sensor::CollatorInterface。
-             * 主要作用：将多传感器采集的数据归并到轨迹上。
-             */
             sensor_collator_.get(), trajectory_id, expected_sensor_ids,
             /*
              * （1）CreateGlobalTrajectoryBuilder2D() 函数生成一个 GlobalTrajectoryBuilder 的智能指针。
@@ -212,12 +207,8 @@ int MapBuilder::AddTrajectoryBuilder(
                 static_cast<PoseGraph2D*>(pose_graph_.get()),
                 local_slam_result_callback)));
 
-    /*
-     * 2d的情况需要多处理的情况。
-     * has_overlapping_submaps_trimmer_2d()不知道表示什么意思，
-     * 猜测是说如果两个submap有重叠的部分，则调用pose_graph_中的方法来进行全局优化。
-     * 那3d的情况就不需要处理吗？
-     */
+    // 针对二维建图还有一个配置项 overlapping_submaps_trimmer_2d，决定是否为 pose_graph_ 对象添加一个
+    // OverlappingSubmapsTrimmer2D 类型的修饰器，用于根据子图之间重叠的部分修饰地图。
     if (trajectory_options.has_overlapping_submaps_trimmer_2d()) {
       const auto& trimmer_options =
           trajectory_options.overlapping_submaps_trimmer_2d();
@@ -231,10 +222,7 @@ int MapBuilder::AddTrajectoryBuilder(
           trimmer_options.min_added_submaps_count()));
     }
   }
-  /*
-   * 如果是纯定位的情况。
-   * pure_localization()的配置文件在/src/cartographer/configuration_files/trajectory_builder.lua中
-   */
+  // 如果配置项要求只进行定位，那么可以在 pose_graph_ 中添加一个 PureLocalizationTrimmer 类型修饰器，来完成这一功能。
   if (trajectory_options.pure_localization()) {
     constexpr int kSubmapsToKeep = 3;
     pose_graph_->AddTrimmer(common::make_unique<PureLocalizationTrimmer>(
@@ -247,6 +235,7 @@ int MapBuilder::AddTrajectoryBuilder(
    * 然后根据机器人与Landmark之间的相对位姿推算机器人相对于世界坐标系的相对位姿。
    * 以该位姿作为新增加的trajectory的初始位姿。这样情况下，在检测到Landmark时就能有效降低累积误差。
    */
+  // 如果开始建图之前已经有了初始位置，那么我们可以将初始位置提供给 pose_graph_ 对象。
   if (trajectory_options.has_initial_trajectory_pose()) {
     const auto& initial_trajectory_pose =
         trajectory_options.initial_trajectory_pose();
@@ -256,7 +245,7 @@ int MapBuilder::AddTrajectoryBuilder(
         transform::ToRigid3(initial_trajectory_pose.relative_pose()),
         common::FromUniversal(initial_trajectory_pose.timestamp()));
   }
-  //将一些跟传感器相关的配置项转成proto流，然后统一放到all_trajectory_builder_options_这个向量列表中
+  // 将轨迹跟踪器的配置信息和传感器配置信息保存到容器 all_trajectory_builder_options_ 中。
   proto::TrajectoryBuilderOptionsWithSensorIds options_with_sensor_ids_proto;
   for (const auto& sensor_id : expected_sensor_ids) {
     *options_with_sensor_ids_proto.add_sensor_id() = ToProto(sensor_id);
@@ -264,7 +253,9 @@ int MapBuilder::AddTrajectoryBuilder(
   *options_with_sensor_ids_proto.mutable_trajectory_builder_options() =
       trajectory_options;
   all_trajectory_builder_options_.push_back(options_with_sensor_ids_proto);
+  // 检查轨迹跟踪器对象及其配置的数量，确保两者相等
   CHECK_EQ(trajectory_builders_.size(), all_trajectory_builder_options_.size());
+  // 返回新建的轨迹跟踪器对象的索引
   return trajectory_id;
 }
 
