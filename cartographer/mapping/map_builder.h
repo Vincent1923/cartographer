@@ -34,9 +34,13 @@ proto::MapBuilderOptions CreateMapBuilderOptions(
 
 // Wires up the complete SLAM stack with TrajectoryBuilders (for local submaps)
 // and a PoseGraph for loop closure.
-// TrajectoryBuilder用于local submaps的建立与维护；PoseGraph部分用于loop closure。
+// TrajectoryBuilder 用于 local submaps 的建立与维护；PoseGraph 部分用于 loop closure。
 class MapBuilder : public MapBuilderInterface {
  public:
+  /**
+   * @brief MapBuilder  构造函数，主要是完成几个成员变量的构造
+   * @param options     配置选项，这个参数的数据类型是通过 protobuf 根据 proto 文件生成的。
+   */
   explicit MapBuilder(const proto::MapBuilderOptions &options);
   ~MapBuilder() override {}
 

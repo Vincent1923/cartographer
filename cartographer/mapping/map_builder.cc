@@ -79,37 +79,36 @@ proto::MapBuilderOptions CreateMapBuilderOptions(
   return options;
 }
 
-/*
- * （1）MapBuilder 的构造函数，基本上要做的就是给 MapBuilder 的配置项赋值的一些操作，
- *     根据传入的参数 option 中的配置要设置是2d建图还是3d建图，2d和3d建图要分别设置不同的 PoseGraph。
- *     PoseGraph 这个接口应该有两种不同的实现，分别是 PoseGraph2D 和 PoseGraph3D。
- * （2）配置项 options 的数据类型为 proto::MapBuilderOptions，这是一个 ProtocolBuffer 消息类型，用于做串行化的数据结构信息，
- *     消息类型定义在“cartographer/cartographer/mapping/proto/map_builder_options.proto”文件中。
- *     而具体的参数在“cartographer/configuration_files/map_builder.lua”文件中配置。
- */
+// 构造函数，主要是完成了对 options_、thread_pool_、pose_graph_、sensor_collator_的构建工作。
+// 而用于建立子图的轨迹跟踪器的对象 trajectory_builders_ 则需要通过调用接口 AddTrajectoryBuilder() 来完成构建。
+// 用成员变量 options_ 保存了配置选项，同时根据配置中关于线程数量的配置完成了线程池 thread_pool_ 的构造。
 MapBuilder::MapBuilder(const proto::MapBuilderOptions& options)
     : options_(options), thread_pool_(options.num_background_threads()) {
+  // 检查配置项，确保在 2D 建图和 3D 建图之间二选一
   CHECK(options.use_trajectory_builder_2d() ^
         options.use_trajectory_builder_3d());
-  if (options.use_trajectory_builder_2d()) {  // 设置2d建图
+  // 如果是 2D 建图，那么我们就构建一个 PoseGraph2D 的对象记录在 pose_graph_ 下
+  if (options.use_trajectory_builder_2d()) {
     pose_graph_ = common::make_unique<PoseGraph2D>(
         options_.pose_graph_options(),
         common::make_unique<optimization::OptimizationProblem2D>(
             options_.pose_graph_options().optimization_problem_options()),
         &thread_pool_);
   }
-  if (options.use_trajectory_builder_3d()) {  // 设置3d建图
+  // 如果是一个 3D 建图，就构建一个 PoseGraph3D 的对象
+  if (options.use_trajectory_builder_3d()) {
     pose_graph_ = common::make_unique<PoseGraph3D>(
         options_.pose_graph_options(),
         common::make_unique<optimization::OptimizationProblem3D>(
             options_.pose_graph_options().optimization_problem_options()),
         &thread_pool_);
   }
-  /*
-   * sensor_collator_ 是一个接口 sensor::CollatorInterface 的智能指针。
-   * 根据 options.collate_by_trajectory() 的不同，sensor::CollatorInterface 有两种不同的实现方式，
-   * 分别是 sensor::TrajectoryCollator 和 sensor::Collator。一般默认是0。
-   */
+  /**
+   * 1. 最后根据配置项 collate_by_trajectory 来构建修正器。
+   * 2. sensor_collator_ 是一个接口 sensor::CollatorInterface 的智能指针。
+   *    根据 options.collate_by_trajectory() 的不同，sensor::CollatorInterface 有两种不同的实现方式，
+   *    分别是 sensor::TrajectoryCollator 和 sensor::Collator。一般默认是0。
+   */ 
   if (options.collate_by_trajectory()) {
     sensor_collator_ = common::make_unique<sensor::TrajectoryCollator>();
   } else {
