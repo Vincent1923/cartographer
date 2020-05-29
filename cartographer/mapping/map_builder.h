@@ -97,15 +97,18 @@ class MapBuilder : public MapBuilderInterface {
   }
 
  private:
-  const proto::MapBuilderOptions options_;  // MapBuilder的配置项
-  common::ThreadPool thread_pool_;          // 线程池。个人猜测，应该是为每一条 trajectory 都单独开辟一个线程
+  // options_ 用于记录运行配置，它使用了 google 的 protobuf 来处理结构化的数据。
+  // 这些配置项是由 cartographer_ros 在系统运行之初从配置文件中加载的。
+  const proto::MapBuilderOptions options_;
+  // 线程池，其中的线程数量是固定的。
+  // Cartographer 使用类 ThreadPool 对 C++11 的线程进行了封装，用于方便高效的管理多线程。
+  common::ThreadPool thread_pool_;
 
-  /*
-   * MapBuilder维护了一个PoseGraph的智能指针，该指针用来做Loop Closure
-   */
+  // 该对象用于在后台完成闭环检测，进行全局的地图优化。
   std::unique_ptr<PoseGraph> pose_graph_;
 
-  std::unique_ptr<sensor::CollatorInterface> sensor_collator_;  // 收集传感器数据的智能指针
+  // 应该是用来管理和收集传感器数据的
+  std::unique_ptr<sensor::CollatorInterface> sensor_collator_;
   /*
    * （1）MapBuilder还维护了一个TrajectoryBuilder的向量列表，每一个TrajectoryBuilder对应了机器人运行了一圈。
    *     这个向量列表就管理了整个图中的所有submap。
@@ -115,10 +118,12 @@ class MapBuilder : public MapBuilderInterface {
    *     但这个submap会随着时间或trajectory的增长而产生误差累积，当trajectory增长到超过一个阈值，则会新增一个submap。
    *     而PoseGraph是用来进行全局优化，将所有的Submap紧紧tie在一起，构成一个全局的Map，消除误差累积。
    */
+  // 用于在前台构建子图。在系统运行的过程中，可能有不止一条轨迹，针对每一条轨迹 Cartographer 都建立了一个轨迹跟踪器。
   std::vector<std::unique_ptr<mapping::TrajectoryBuilderInterface>>
-      trajectory_builders_;  // 轨迹线集合
+      trajectory_builders_;
+  // 记录了所有轨迹跟踪器的配置。
   std::vector<proto::TrajectoryBuilderOptionsWithSensorIds>
-      all_trajectory_builder_options_;  //与每个 TrajectoryBuilderInterface 相对应的配置项
+      all_trajectory_builder_options_;
 };
 
 }  // namespace mapping
