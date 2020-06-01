@@ -30,13 +30,14 @@
 namespace cartographer {
 namespace mapping {
 
-/*
- * （1）CreateGlobalTrajectoryBuilder2D() 函数生成一个 GlobalTrajectoryBuilder 的智能指针。
- *     GlobalTrajectoryBuilder 继承了 TrajectoryBuilderInterface。
- * （2）GlobalTrajectoryBuilder 是一个模板类，其模板列表中的 LocalTrajectoryBuilder 和 PoseGraph 分别是前端和后端的两个核心类型。
- *     这里传入的模板为 LocalTrajectoryBuilder2D 和 PoseGraph2D，表示 2D 构图。
- *     LocalTrajectoryBuilder2D 负责接收来自激光雷达的数据，进行扫描匹配，估计机器人位姿，并将传感器数据插入子图中，更新子图。
- *     PoseGraph2D 在后台进行闭环检测全局优化。
+/**
+ * @brief CreateGlobalTrajectoryBuilder2D  构建一个 GlobalTrajectoryBuilder 类型的对象。它是连接前端与后端的桥梁，
+ *                                         继承了 TrajectoryBuilderInterface。
+ * @param local_trajectory_builder         位姿跟踪器，前端的核心对象，其数据类型是一个模板参数
+ * @param trajectory_id                    轨迹索引
+ * @param pose_graph                       位姿图，后端的核心对象，其数据类型是一个模板参数
+ * @param local_slam_result_callback       前端数据更新后的回调函数
+ * @return                                 GlobalTrajectoryBuilder 类型的对象
  */
 std::unique_ptr<TrajectoryBuilderInterface> CreateGlobalTrajectoryBuilder2D(
     std::unique_ptr<LocalTrajectoryBuilder2D> local_trajectory_builder,

@@ -31,19 +31,24 @@ namespace {
 static auto* kLocalSlamMatchingResults = metrics::Counter::Null();
 static auto* kLocalSlamInsertionResults = metrics::Counter::Null();
 
+// GlobalTrajectoryBuilder 是连接前端与后端的桥梁，它继承了 TrajectoryBuilderInterface。
+// GlobalTrajectoryBuilder 实际上是一个模板类。其模板列表中的 LocalTrajectoryBuilder 和 PoseGraph 分别是前端和后端的两个核心类型。
+// LocalTrajectoryBuilder 负责接收来自激光雷达的数据，进行扫描匹配，估计机器人位姿，并将传感器数据插入子图中，更新子图。
+// PoseGraph 在后台进行闭环检测全局优化。
 template <typename LocalTrajectoryBuilder, typename PoseGraph>
 class GlobalTrajectoryBuilder : public mapping::TrajectoryBuilderInterface {
  public:
   // Passing a 'nullptr' for 'local_trajectory_builder' is acceptable, but no
   // 'TimedPointCloudData' may be added in that case.
-  // 为“local_trajectory_builder”传递“nullptr”是可以接受的，但在这种情况下，不能添加“TimedPointCloudData”。、
-  //
-  // 构造函数，它有四个输入参数，分别记录了轨迹跟踪器、轨迹索引、位姿图、前端回调函数。
-  // 这些参数在成员构造列表中，被拿来一一构建成员变量。函数体是空的没有任何操作。
-  // local_trajectory_builder：位姿跟踪器，前端的核心对象，其数据类型是一个模板参数。
-  // trajectory_id：轨迹索引。
-  // pose_graph：位姿图，后端的核心对象，其数据类型是一个模板参数。
-  // local_slam_result_callback：前端数据更新后的回调函数。
+  // 为 "local_trajectory_builder" 传递 "nullptr" 是可以接受的，但在这种情况下，不能添加 "TimedPointCloudData"。
+  /**
+   * @brief GlobalTrajectoryBuilder     构造函数，它有四个输入参数，分别记录了轨迹跟踪器、轨迹索引、位姿图、前端回调函数。
+   *                                    这些参数在成员构造列表中，被拿来一一构建成员变量。函数体是空的没有任何操作。
+   * @param local_trajectory_builder    位姿跟踪器，前端的核心对象，其数据类型是一个模板参数
+   * @param trajectory_id               轨迹索引
+   * @param pose_graph                  位姿图，后端的核心对象，其数据类型是一个模板参数
+   * @param local_slam_result_callback  前端数据更新后的回调函数
+   */
   GlobalTrajectoryBuilder(
       std::unique_ptr<LocalTrajectoryBuilder> local_trajectory_builder,
       const int trajectory_id, PoseGraph* const pose_graph,
@@ -52,7 +57,7 @@ class GlobalTrajectoryBuilder : public mapping::TrajectoryBuilderInterface {
         pose_graph_(pose_graph),
         local_trajectory_builder_(std::move(local_trajectory_builder)),
         local_slam_result_callback_(local_slam_result_callback) {}
-  // 析够函数，函数体也是空的什么也没做。
+  // 析构函数，函数体也是空的什么也没做。
   ~GlobalTrajectoryBuilder() override {}
 
   // 屏蔽了拷贝构造和拷贝赋值两个构造对象的途径。
@@ -142,12 +147,18 @@ class GlobalTrajectoryBuilder : public mapping::TrajectoryBuilderInterface {
 
 }  // namespace
 
+// 构建一个 GlobalTrajectoryBuilder 类型的对象。它是连接前端与后端的桥梁，继承了 TrajectoryBuilderInterface。
+// 它有四个输入参数。
+// local_trajectory_builder: 位姿跟踪器，前端的核心对象，其数据类型是一个模板参数。
+// trajectory_id: 轨迹索引。
+// pose_graph: 位姿图，后端的核心对象，其数据类型是一个模板参数。
+// local_slam_result_callback: 前端数据更新后的回调函数。
 std::unique_ptr<TrajectoryBuilderInterface> CreateGlobalTrajectoryBuilder2D(
     std::unique_ptr<LocalTrajectoryBuilder2D> local_trajectory_builder,
     const int trajectory_id, mapping::PoseGraph2D* const pose_graph,
     const TrajectoryBuilderInterface::LocalSlamResultCallback&
         local_slam_result_callback) {
-  // 生成一个 GlobalTrajectoryBuilder 的智能指针。
+  // 生成一个 GlobalTrajectoryBuilder 的智能指针。它实际上是一个模板类。
   // 这里传入的模板为 LocalTrajectoryBuilder2D 和 PoseGraph2D，表示 2D 构图。
   return common::make_unique<
       GlobalTrajectoryBuilder<LocalTrajectoryBuilder2D, mapping::PoseGraph2D>>(

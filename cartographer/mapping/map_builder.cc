@@ -156,7 +156,7 @@ int MapBuilder::AddTrajectoryBuilder(
                 static_cast<PoseGraph3D*>(pose_graph_.get()),
                 local_slam_result_callback)));
   } else {  // 进行二维建图，构建轨迹跟踪器
-    // 先创建一个 LocalTrajectoryBuilder2D 类型的对象。
+    // 先创建一个 LocalTrajectoryBuilder2D 类型的对象。它是前端的核心对象。
     // 这个对象并不是我们一直说的轨迹跟踪器，但它应该是轨迹跟踪器的核心。
     // 因为它几乎完成了一个局部 SLAM 的所有功能，包括位姿估计、扫描匹配等，就是没有闭环检测。
     std::unique_ptr<LocalTrajectoryBuilder2D> local_trajectory_builder;
