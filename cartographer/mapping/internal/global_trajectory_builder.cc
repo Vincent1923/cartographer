@@ -64,12 +64,22 @@ class GlobalTrajectoryBuilder : public mapping::TrajectoryBuilderInterface {
   GlobalTrajectoryBuilder(const GlobalTrajectoryBuilder&) = delete;
   GlobalTrajectoryBuilder& operator=(const GlobalTrajectoryBuilder&) = delete;
 
-  // 处理点云数据
+  /**
+   * @brief AddSensorData           处理点云数据，可以说该接口控制了整个 Cartographer 系统的运行过程。
+   * @param sensor_id               点云数据的传感器主题名称
+   * @param timed_point_cloud_data  传感器产生的数据。cartographer_ros 使用 SensorBridge 将 ROS 系统中的激光扫描数据
+   *                                转换成这里的 sensor::TimedPointCloudData 类型。
+   */
   void AddSensorData(
       const std::string& sensor_id,
       const sensor::TimedPointCloudData& timed_point_cloud_data) override {
+    // 检查一下前端核心对象是否存在
     CHECK(local_trajectory_builder_)
         << "Cannot add TimedPointCloudData without a LocalTrajectoryBuilder.";
+    // 如果存在就通过它的成员函数 AddRangeData() 完成 Local SLAM 的业务主线。
+    // 如果一切正常，就会返回扫描匹配的结果，在该结果中同时记录了子图的更新信息。
+    // 返回结果通过智能指针 matching_result 记录。
+    // 所以，matching_result 记录了前端 local_trajectory_builder_ 进行扫描匹配的结果。
     std::unique_ptr<typename LocalTrajectoryBuilder::MatchingResult>
         matching_result = local_trajectory_builder_->AddRangeData(
             sensor_id, timed_point_cloud_data);
@@ -77,20 +87,28 @@ class GlobalTrajectoryBuilder : public mapping::TrajectoryBuilderInterface {
       // The range data has not been fully accumulated yet.
       return;
     }
+    // 前端工作完成之后，GlobalTrajectoryBuilder 就要将前端的输出结果喂给后端进行闭环检测和全局优化。
+    // 首先控制计数器 kLocalSlamMatchingResults 自增，记录下前端的输出次数。
     kLocalSlamMatchingResults->Increment();
     std::unique_ptr<InsertionResult> insertion_result;
+    // 通过查询扫描匹配结果 matching_result 的字段 insertion_result 判定前端是否成功地将传感器的数据插入到子图中
     if (matching_result->insertion_result != nullptr) {
       kLocalSlamInsertionResults->Increment();
+      // 若是，则通过后端的位姿图接口 AddNode() 创建一个轨迹节点，并把前端的输出结果喂给后端。
+      // 如果一切正常，我们就会得到新建的轨迹节点索引，它被记录在临时对象 node_id 中。
+      // 所以，node_id 是后端的位姿图 pose_graph_ 新建的轨迹节点索引。
       auto node_id = pose_graph_->AddNode(
           matching_result->insertion_result->constant_data, trajectory_id_,
           matching_result->insertion_result->insertion_submaps);
       CHECK_EQ(node_id.trajectory_id, trajectory_id_);
+      // 最后结合后端输出的节点索引 node_id，以及前端输出的扫描匹配结果 matching_result 实例化对象 insertion_result
       insertion_result = common::make_unique<InsertionResult>(InsertionResult{
           node_id, matching_result->insertion_result->constant_data,
           std::vector<std::shared_ptr<const Submap>>(
               matching_result->insertion_result->insertion_submaps.begin(),
               matching_result->insertion_result->insertion_submaps.end())});
     }
+    // 最后，如果我们提供了回调函数，就调用回调函数，并将前端的输出和刚刚构建的 insertion_result 对象传参。
     if (local_slam_result_callback_) {
       local_slam_result_callback_(
           trajectory_id_, matching_result->time, matching_result->local_pose,
@@ -99,23 +117,44 @@ class GlobalTrajectoryBuilder : public mapping::TrajectoryBuilderInterface {
     }
   }
 
+  // 由于 IMU 和里程计的数据都可以拿来通过积分运算进行局部的定位，所以这两个传感器的数据处理方式基本一样。
+  /**
+   * @brief AddSensorData  处理 IMU 数据
+   * @param sensor_id      IMU 数据的传感器主题名称
+   * @param imu_data       IMU 数据。cartographer_ros 使用 SensorBridge 将 ROS 系统中的 IMU 消息
+   *                       转换成这里的 sensor::ImuData 类型。
+   */
   void AddSensorData(const std::string& sensor_id,
                      const sensor::ImuData& imu_data) override {
+    // 判断前端核心对象是否存在
     if (local_trajectory_builder_) {
+      // 将 IMU 数据喂给前端对象进行局部定位
       local_trajectory_builder_->AddImuData(imu_data);
     }
+    // 通过后端的位姿图 pose_graph_ 将传感器的信息添加到全局地图中
     pose_graph_->AddImuData(trajectory_id_, imu_data);
   }
 
+  /**
+   * @brief AddSensorData  处理里程计数据
+   * @param sensor_id      里程计数据的传感器主题名称
+   * @param imu_data       里程计数据。cartographer_ros 使用 SensorBridge 将 ROS 系统中的里程计消息
+   *                       转换成这里的 sensor::OdometryData 类型。
+   */
   void AddSensorData(const std::string& sensor_id,
                      const sensor::OdometryData& odometry_data) override {
     CHECK(odometry_data.pose.IsValid()) << odometry_data.pose;
+    // 判断前端核心对象是否存在
     if (local_trajectory_builder_) {
+      // 将里程计数据喂给前端对象进行局部定位
       local_trajectory_builder_->AddOdometryData(odometry_data);
     }
+    // 通过后端的位姿图 pose_graph_ 将传感器的信息添加到全局地图中
     pose_graph_->AddOdometryData(trajectory_id_, odometry_data);
   }
 
+  // 在 Cartographer 中将类似于 GPS 这种具有全局定位能力的传感器输出的位姿称为固定坐标系位姿(fixed frame pose)。
+  // 由于它们的测量结果是全局的信息，所以没有喂给前端用于局部定位。
   void AddSensorData(
       const std::string& sensor_id,
       const sensor::FixedFramePoseData& fixed_frame_pose) override {
@@ -126,11 +165,14 @@ class GlobalTrajectoryBuilder : public mapping::TrajectoryBuilderInterface {
     pose_graph_->AddFixedFramePoseData(trajectory_id_, fixed_frame_pose);
   }
 
+  // 路标数据也可以认为是全局的定位信息，也直接喂给了后端
   void AddSensorData(const std::string& sensor_id,
                      const sensor::LandmarkData& landmark_data) override {
     pose_graph_->AddLandmarkData(trajectory_id_, landmark_data);
   }
 
+  // 最后是关于直接给后端添加 Local SLAM 的结果数据的接口。因为我们的前端对象的数据类型是 LocalTrajectoryBuilder2D，
+  // 所以如果前端对象存在就不能调用该接口。
   void AddLocalSlamResultData(std::unique_ptr<mapping::LocalSlamResultData>
                                   local_slam_result_data) override {
     CHECK(!local_trajectory_builder_) << "Can't add LocalSlamResultData with "
