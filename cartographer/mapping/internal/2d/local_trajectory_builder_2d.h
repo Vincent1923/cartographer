@@ -45,25 +45,32 @@ namespace mapping {
 class LocalTrajectoryBuilder2D {
  public:
   struct InsertionResult {
-    std::shared_ptr<const TrajectoryNode::Data> constant_data;       // 节点数据
-    std::vector<std::shared_ptr<const Submap2D>> insertion_submaps;  // 插入的 submap 的向量
+    // constant_data 的数据类型 TrajectoryNode::Data，实际上是结构体 TrajectoryNode 内部定义的结构体，包含了处理之后的点云数据。
+    std::shared_ptr<const TrajectoryNode::Data> constant_data;       // 插入的节点数据
+    std::vector<std::shared_ptr<const Submap2D>> insertion_submaps;  // 被插入的子图
   };
   // matching 结果。包括时间、匹配的 local_pose、传感器数据、插入结果等
   struct MatchingResult {
-    common::Time time;
-    transform::Rigid3d local_pose;
-    sensor::RangeData range_data_in_local;
+    common::Time time;                      // 扫描匹配发生的时间
+    transform::Rigid3d local_pose;          // 在局部地图坐标系下的位姿
+    sensor::RangeData range_data_in_local;  // 局部的扫描数据
     // 'nullptr' if dropped by the motion filter.
-    // 如果被 motion filter 滤掉了，那么 insertion_result 返回空指针。
-    std::unique_ptr<const InsertionResult> insertion_result;
+    // 如果扫描匹配的结果被运动滤波器过滤了，那么字段 insertion_result 中记录的是一个空指针 "nullptr"。
+    std::unique_ptr<const InsertionResult> insertion_result;  // 子图插入结果
   };
 
-  // 构造函数，为几个成员变量初始化
+  /**
+   * @brief LocalTrajectoryBuilder2D   构造函数。函数体是空的，在它的构造列表中通过输入参数 options 完成了对各个成员变量的构造。
+   * @param options                    轨迹跟踪器的配置选项
+   * @param expected_range_sensor_ids  用于建图的所有传感器主题名称
+   */
   explicit LocalTrajectoryBuilder2D(
       const proto::LocalTrajectoryBuilderOptions2D& options,
       const std::vector<std::string>& expected_range_sensor_ids);
+  // 析构函数
   ~LocalTrajectoryBuilder2D();
 
+  // 为了防止一些意外的情况发生，该类屏蔽了拷贝构造函数和拷贝赋值运算符。
   LocalTrajectoryBuilder2D(const LocalTrajectoryBuilder2D&) = delete;
   LocalTrajectoryBuilder2D& operator=(const LocalTrajectoryBuilder2D&) = delete;
 
@@ -109,23 +116,23 @@ class LocalTrajectoryBuilder2D {
   // Lazily constructs a PoseExtrapolator.
   void InitializeExtrapolator(common::Time time);
 
-  const proto::LocalTrajectoryBuilderOptions2D options_;  // 参数配置项
-  ActiveSubmaps2D active_submaps_;  // 在 mapping/2d/submap_2d.h 中定义。同时维护着两个 submap
+/*************************************** 成员变量 ***************************************/
+  const proto::LocalTrajectoryBuilderOptions2D options_;  // 轨迹跟踪器的配置选项
+  ActiveSubmaps2D active_submaps_;                        // 当前正在维护的子图
 
-  // MotionFilter 定义在"/mapping/internal/motion_filter.h"中，其主要作用是对数据进行一下滤波。
-  // 当两帧数据的间隔时间/两帧的Pose跨过的距离/两帧的Pose转过的角度等不超过一定的阈值时，认为新的数据提供的信息很少，这些数据可以直接舍去。
-  MotionFilter motion_filter_;
+  MotionFilter motion_filter_;                            // 运动滤波器，对位姿相关的数据进行降采样
+  // 实时相关性分析的扫描匹配器，算法 "Real-Time Correlative Scan Matching" 的实现
   scan_matching::RealTimeCorrelativeScanMatcher2D
-      real_time_correlative_scan_matcher_;  // 实时的扫描匹配，用的相关分析方法
-  scan_matching::CeresScanMatcher2D ceres_scan_matcher_;  // Ceres 方法匹配。所以两者都是 Scan-to-match 的匹配？方法二选一？
+      real_time_correlative_scan_matcher_;
+  scan_matching::CeresScanMatcher2D ceres_scan_matcher_;  // 使用 Ceres 库将扫描数据放置到地图中的扫描匹配器
 
-  std::unique_ptr<PoseExtrapolator> extrapolator_;  // 轨迹推算器。融合 IMU，里程计数据
+  std::unique_ptr<PoseExtrapolator> extrapolator_;  // 位姿估计器，用一段时间内的位姿数据估计线速度和角速度，进而预测运动
 
-  int num_accumulated_ = 0;  // 累积数据的数量
-  sensor::RangeData accumulated_range_data_;  // 该轨迹的累积数据
-  std::chrono::steady_clock::time_point accumulation_started_;  // 标记该轨迹的开始时刻
+  int num_accumulated_ = 0;                                     // 累积数据的数量
+  sensor::RangeData accumulated_range_data_;                    // 累积的扫描数据
+  std::chrono::steady_clock::time_point accumulation_started_;  // 开始累积数据的时间，也是开始跟踪轨迹的时间
 
-  RangeDataCollator range_data_collator_;  // 收集传感器数据
+  RangeDataCollator range_data_collator_;  // 累积数据收集器
 };
 
 }  // namespace mapping

@@ -33,7 +33,7 @@ static auto* kCeresScanMatcherCostMetric = metrics::Histogram::Null();
 static auto* kScanMatcherResidualDistanceMetric = metrics::Histogram::Null();
 static auto* kScanMatcherResidualAngleMetric = metrics::Histogram::Null();
 
-// 构造函数，为几个成员变量初始化
+// 构造函数。函数体是空的，在它的构造列表中通过输入参数 options 完成了对各个成员变量的构造。
 LocalTrajectoryBuilder2D::LocalTrajectoryBuilder2D(
     const proto::LocalTrajectoryBuilderOptions2D& options,
     const std::vector<std::string>& expected_range_sensor_ids)
