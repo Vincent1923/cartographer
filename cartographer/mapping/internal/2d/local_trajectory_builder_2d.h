@@ -86,7 +86,15 @@ class LocalTrajectoryBuilder2D {
   std::unique_ptr<MatchingResult> AddRangeData(
       const std::string& sensor_id,
       const sensor::TimedPointCloudData& range_data);
+  /**
+   * @brief AddImuData  接收 IMU 数据，并完成位姿估计器 extrapolator_ 的初始化工作
+   * @param imu_data    IMU 数据
+   */
   void AddImuData(const sensor::ImuData& imu_data);
+  /**
+   * @brief AddOdometryData  接收里程计数据
+   * @param odometry_data    里程计数据
+   */
   void AddOdometryData(const sensor::OdometryData& odometry_data);
 
   static void RegisterMetrics(metrics::FamilyFactory* family_factory);
@@ -114,6 +122,10 @@ class LocalTrajectoryBuilder2D {
       const sensor::RangeData& gravity_aligned_range_data);
 
   // Lazily constructs a PoseExtrapolator.
+  /**
+   * @brief InitializeExtrapolator  初始化位姿估计器对象 extrapolator_
+   * @param time                    IMU 数据产生的时间
+   */
   void InitializeExtrapolator(common::Time time);
 
 /*************************************** 成员变量 ***************************************/

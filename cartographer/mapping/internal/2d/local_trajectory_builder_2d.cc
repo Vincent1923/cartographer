@@ -364,40 +364,49 @@ LocalTrajectoryBuilder2D::InsertIntoSubmap(
       std::move(insertion_submaps)});
 }
 
-// 添加 IMU 数据，并对 PoseExtrapolator 进行带 IMU 的设置。将 IMU 数据压入队列
+// 接收 IMU 数据，并完成位姿估计器 extrapolator_ 的初始化工作
 void LocalTrajectoryBuilder2D::AddImuData(const sensor::ImuData& imu_data) {
+  // 检查配置项是否要求使用 IMU 数据
   CHECK(options_.use_imu_data()) << "An unexpected IMU packet was added.";
+  // 通过函数 InitializeExtrapolator() 完成位姿估计器 extrapolator_ 的初始化工作
   InitializeExtrapolator(imu_data.time);
+  // 最后将 IMU 的数据喂给 extrapolator_ 对象
   extrapolator_->AddImuData(imu_data);
 }
 
-// 添加里程计数据，压入队列中
+// 接收里程计数据
 void LocalTrajectoryBuilder2D::AddOdometryData(
     const sensor::OdometryData& odometry_data) {
+  // 需要先通过检查对象 extrapolator_ 是否为空指针来判定位姿估计器是否已经完成初始化工作了
   if (extrapolator_ == nullptr) {
     // Until we've initialized the extrapolator we cannot add odometry data.
+    // 在位姿估计器完成初始化之前，我们无法添加里程计数据。
     LOG(INFO) << "Extrapolator not yet initialized.";
     return;
   }
+  // 若通过则直接将里程计的数据喂给 extrapolator_ 对象
   extrapolator_->AddOdometryData(odometry_data);
 }
 
-// 初始化 Extrapolator
+// 初始化位姿估计器对象 extrapolator_
 void LocalTrajectoryBuilder2D::InitializeExtrapolator(const common::Time time) {
+  // 在函数的一开始检查对象 extrapolator_ 是否是一个空指针，
+  // 如果不是意味着已经创建了一个位姿估计器对象，直接返回。
   if (extrapolator_ != nullptr) {
     return;
   }
   // We derive velocities from poses which are at least 1 ms apart for numerical
   // stability. Usually poses known to the extrapolator will be further apart
   // in time and thus the last two are used.
+  // 我们从至少 1ms 的位姿中得出速度，以实现数值稳定性。通常，位姿估计器已知的位姿会在时间上分开，因此使用最后两个位姿。
   // 该参数配置的是 PoseExtrapolator 中 Pose 队列的持续时间。设置为1ms。
   constexpr double kExtrapolationEstimationTimeSec = 0.001;
   // TODO(gaschler): Consider using InitializeWithImu as 3D does.
-  // 生成一个 PoseExtrapolator
+  // 创建一个 PoseExtrapolator 类型的位姿估计器
   extrapolator_ = common::make_unique<PoseExtrapolator>(
       ::cartographer::common::FromSeconds(kExtrapolationEstimationTimeSec),
       options_.imu_gravity_time_constant());
-  // 初始时刻，添加一个 Pose:I
+  // 最后添加一个初始位姿 I
   extrapolator_->AddPose(time, transform::Rigid3d::Identity());
 }
 
