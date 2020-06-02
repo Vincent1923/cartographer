@@ -80,26 +80,26 @@ class Submap2D : public Submap {
 // always two submaps into which range data is inserted: an old submap that is
 // used for matching, and a new one, which will be used for matching next, that
 // is being initialized.
-// 除了在初始化期间只有一个 submap 存在的情况之外，range data 总是会插入到两个 submap 中：
-// 一个用于匹配的旧 submap，另一个正在初始化，用于接下来要匹配的新 submap。
+// 除了在初始化期间只有一个子图存在的情况之外，扫描数据总是会插入到两个子图中：
+// 一个是旧图用来做匹配，另一个是正在初始化的新图，用于接下来做匹配。
 //
 // Once a certain number of range data have been inserted, the new submap is
 // considered initialized: the old submap is no longer changed, the "new" submap
 // is now the "old" submap and is used for scan-to-map matching. Moreover, a
 // "new" submap gets created. The "old" submap is forgotten by this object.
-// 一旦插入一定数量的 range data，就将新 submap 视为已初始化：旧 submap 不再更改，
-// “新”submap 现在是“旧”submap，并用于 scan-to-map 匹配。
-// 此外，将创建一个“新”submap。该对象会遗忘掉“旧”submap。
+// 新图一旦插入一定数量的扫描数据，就视为完成初始化：旧图不再更改，“新”图会变成“旧”图，并用于扫描匹配。
+// 此外，将生成一个“新”图。该对象将抛弃原来的“旧”图。
 //
-// 在 cartographer 中总是同时存在着两个 Submap：Old Submap 和 New Submap。
-// Old Submap 是用来做 matching，New submap 则用来 matching next。
-// 每一帧 RangeData 数据都要同时插入到两个 submap 中。当插入 Old Submap 中的传感器帧数达到一定数量
-// （在配置文件/src/cartographer/configuration_files/trajectory_builder_2d.lua中设置-submap/num_range_data）时，
-// Old submap 就不再改变，这时 Old Submap 开始进行 Loop Closure，被加入到 submap 的 list 中，
-// 设置 matching_submap_index 增加1，然后被 ActiveSubmap 这个 object 所遗忘，
-// 而原先的 New submap 则变成新的 Old Submap，同时通过 AddSubmap 函数重新初始化一个 submap。
+// 除了刚开始构建该对象的时候，只有一个子图(Submap2D)，其他时候它都维护着两个子图对象。
+// 一个子图用于进行扫描匹配，称为旧图。另一个子图被称为新图用于插入扫描数据。
+// 当新图中插入一定数量的数据完成了初始化操作之后，它就会被当作旧图，用于扫描匹配。
+// 对象将抛弃原来的旧图，并重新构建一个新图。
 class ActiveSubmaps2D {
  public:
+  /**
+   * @brief ActiveSubmaps2D  构造函数。该函数有一个参数用于配置子图的选项。
+   * @param options          子图的配置选项
+   */
   explicit ActiveSubmaps2D(const proto::SubmapsOptions2D& options);
 
   ActiveSubmaps2D(const ActiveSubmaps2D&) = delete;
@@ -107,26 +107,45 @@ class ActiveSubmaps2D {
 
   // Returns the index of the newest initialized Submap which can be
   // used for scan-to-map matching.
-  // 返回正在执行 scan-to-map matching 的 submap 的 index
+  // 获取当前的匹配子图索引
   int matching_index() const;
 
   // Inserts 'range_data' into the Submap collection.
-  // 将“range_data”插入 Submap 集合
-  // 插入传感器数据
+  // 将 "range_data" 插入子图集合
+  /**
+   * @brief InsertRangeData  将扫描数据插入到子图中
+   * @param range_data       扫描数据
+   */
   void InsertRangeData(const sensor::RangeData& range_data);
 
+  // 获取子图容器 submaps_
   std::vector<std::shared_ptr<Submap2D>> submaps() const;
 
  private:
+  /**
+   * @brief AddSubmap  构建一个插入器对象
+   * @return           新建的插入器对象
+   */
   std::unique_ptr<RangeDataInserterInterface> CreateRangeDataInserter();
+  /**
+   * @brief CreateGrid  为子图创建栅格信息存储结构
+   * @param origin      新建子图的原点坐标
+   */
   std::unique_ptr<GridInterface> CreateGrid(const Eigen::Vector2f& origin);
+  /**
+   * @brief FinishSubmap  完成新旧图的切换
+   */
   void FinishSubmap();
+  /**
+   * @brief AddSubmap  新建一个子图
+   * @param origin     新建子图的原点坐标
+   */
   void AddSubmap(const Eigen::Vector2f& origin);
 
-  const proto::SubmapsOptions2D options_;
-  int matching_submap_index_ = 0;
-  std::vector<std::shared_ptr<Submap2D>> submaps_;
-  std::unique_ptr<RangeDataInserterInterface> range_data_inserter_;
+  const proto::SubmapsOptions2D options_;                            // 子图的配置选项
+  int matching_submap_index_ = 0;                                    // 记录了当前用于扫描匹配的旧图索引
+  std::vector<std::shared_ptr<Submap2D>> submaps_;                   // 保存当前维护子图的容器
+  std::unique_ptr<RangeDataInserterInterface> range_data_inserter_;  // 用于将扫描数据插入子图的工具，我们称它为插入器
 };
 
 }  // namespace mapping

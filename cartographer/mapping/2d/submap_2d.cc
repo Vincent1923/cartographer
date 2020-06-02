@@ -155,43 +155,57 @@ void Submap2D::Finish() {
   set_finished(true);
 }
 
+// 构造函数。
+// 该函数有一个参数 options 用于配置子图的选项，在它的成员初始化列表中，直接用来构建对象 options_。
+// 该函数还通过私有的成员函数 CreateRangeDataInserter() 构建了一个插入器对象，并赋予了 range_data_inserter_。
 ActiveSubmaps2D::ActiveSubmaps2D(const proto::SubmapsOptions2D& options)
     : options_(options),
       range_data_inserter_(std::move(CreateRangeDataInserter())) {
   // We always want to have at least one likelihood field which we can return,
   // and will create it at the origin in absence of a better choice.
   // 我们总是希望至少有一个可以返回的似然字段，并在没有更好选择的情况下在原点创建它。
-  // 新的 submap 如果没有更好选择，不妨设置 original 为[0,0]
+  // 通过函数 AddSubmap()，构建了第一个子图。这里设置原点为 [0,0]。
   AddSubmap(Eigen::Vector2f::Zero());
 }
 
+// 获取子图容器 submaps_
 std::vector<std::shared_ptr<Submap2D>> ActiveSubmaps2D::submaps() const {
   return submaps_;
 }
 
+// 获取当前的匹配子图索引
 int ActiveSubmaps2D::matching_index() const { return matching_submap_index_; }
 
+// 将扫描数据插入到子图中
 void ActiveSubmaps2D::InsertRangeData(const sensor::RangeData& range_data) {
+  // 先依次将输入参数 range_data 填进容器 submaps_ 的子图中
   for (auto& submap : submaps_) {
     submap->InsertRangeData(range_data, range_data_inserter_.get());
   }
-  // 如果插入的 RangeData 达到一定数量，则重新添加一个 submap
+  // 然后，检查新图中插入的数据数量，当超过配置项 num_range_data 的时候就会调用 AddSubmap() 抛弃旧图创建新图。
   if (submaps_.back()->num_range_data() == options_.num_range_data()) {
-    AddSubmap(range_data.origin.head<2>());
+    AddSubmap(range_data.origin.head<2>());  // 新创建子图的坐标原点为扫描数据的原点
   }
 }
 
+// 构建一个插入器对象
 std::unique_ptr<RangeDataInserterInterface>
 ActiveSubmaps2D::CreateRangeDataInserter() {
+  // 将实例化的插入器返回。
+  // 该函数的返回值和用于保存插入器对象的变量的数据类型都是接口类 RangeDataInserterInterface，
+  // 而真正的插入器对象的数据类型是 ProbabilityGridRangeDataInserter2D。这应该是一种概率栅格形式的地图。
   return common::make_unique<ProbabilityGridRangeDataInserter2D>(
       options_.range_data_inserter_options()
           .probability_grid_range_data_inserter_options_2d());
 }
 
+// 为子图创建栅格信息存储结构
 std::unique_ptr<GridInterface> ActiveSubmaps2D::CreateGrid(
     const Eigen::Vector2f& origin) {
+  // 获取子图尺寸和分辨率信息
   constexpr int kInitialSubmapSize = 100;
   float resolution = options_.grid_options_2d().resolution();
+  // 构建一个 ProbabilityGrid 类型的栅格存储
   return common::make_unique<ProbabilityGrid>(
       MapLimits(resolution,
                 origin.cast<double>() + 0.5 * kInitialSubmapSize * resolution *
@@ -199,21 +213,33 @@ std::unique_ptr<GridInterface> ActiveSubmaps2D::CreateGrid(
                 CellLimits(kInitialSubmapSize, kInitialSubmapSize)));
 }
 
+// 完成新旧图的切换
 void ActiveSubmaps2D::FinishSubmap() {
-  Submap2D* submap = submaps_.front().get();  // 把前面的 submap 取出来
-  submap->Finish();  // 让它 finish
-  ++matching_submap_index_;  // 正在匹配的 submap 的 index 指向新的 submap
-  submaps_.erase(submaps_.begin());  // 把开头的 submap 删去
+  // 获取当前的旧图，通过旧图对象的成员函数 Finish() 完成一些收尾工作。
+  Submap2D* submap = submaps_.front().get();  // 容器的第一个元素是旧图
+  submap->Finish();
+  // 增加 matching_submap_index_ 记录当前新图索引
+  ++matching_submap_index_;
+  // 最后抛弃旧图对象。
+  // 需要强调一点，这里所说的抛弃只是不在容器 submaps_ 中存放对象了，
+  // 并不意味者对象就此销毁了，因为容器是以共享指针的形式保存子图对象的。
+  submaps_.erase(submaps_.begin());
 }
 
+// 新建一个子图
+// origin 是新建子图的原点坐标
 void ActiveSubmaps2D::AddSubmap(const Eigen::Vector2f& origin) {
-  //如果 submap_ 的 size 不大于1，说明刚开始创建第一个 submap，不用做任何操作，直接把新的添加进去。否则，要把旧的给 finish 掉
+  // 先检查一下容器 submaps_ 中的子图数量，如果不只有一个子图，
+  // 就需要在函数 FinishSubmap() 中完成新旧图的切换工作。
   if (submaps_.size() > 1) {
     // This will crop the finished Submap before inserting a new Submap to
     // reduce peak memory usage a bit.
     FinishSubmap();
   }
 
+  // 在构造函数中我们是第一次调用该函数，会直接构建一个新的 Submap2D 类型的对象放置到容器 submaps_ 中，
+  // 它将作为一个新图用于插入数据。
+  // 在构建 Submap2D 类型的对象的时候，还调用了函数 CreateGrid() 为该对象提供了一个保存栅格占用信息的存储结构。
   submaps_.push_back(common::make_unique<Submap2D>(
       origin, std::unique_ptr<Grid2D>(
                   static_cast<Grid2D*>(CreateGrid(origin).release()))));
