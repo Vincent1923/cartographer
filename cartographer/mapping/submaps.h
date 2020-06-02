@@ -67,6 +67,10 @@ inline uint8 ProbabilityToLogOddsInteger(const float probability) {
 class Submap {
  public:
   // 构造函数，只包括一个 local_pose
+  /**
+   * @brief Submap             构造函数，设定子图的位姿
+   * @param local_submap_pose  子图的位姿
+   */
   Submap(const transform::Rigid3d& local_submap_pose)
       : local_pose_(local_submap_pose) {}
   virtual ~Submap() {}
@@ -101,10 +105,9 @@ class Submap {
   void set_finished(bool finished) { finished_ = finished; }
 
  private:
-  // 三个成员变量
-  const transform::Rigid3d local_pose_;
-  int num_range_data_ = 0;
-  bool finished_ = false;
+  const transform::Rigid3d local_pose_;  // 子图的局部坐标系原点的位姿
+  int num_range_data_ = 0;               // 子图中插入的数据数量
+  bool finished_ = false;                // 标志着子图是否已经构建完成，是否需要继续更新该子图
 };
 
 }  // namespace mapping

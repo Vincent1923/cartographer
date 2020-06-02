@@ -39,16 +39,17 @@ namespace mapping {
 proto::SubmapsOptions2D CreateSubmapsOptions2D(
     common::LuaParameterDictionary* parameter_dictionary);
 
+// Submap2D 继承自 Submap，父类 Submap 定义了 2D 和 3D 子图的一些共有的属性。
 class Submap2D : public Submap {
  public:
   /**
    * @brief Submap2D  构造函数
-   * @param origin    原点坐标
-   * @param grid      Grid2D 变量，存储栅格化坐标和坐标上的概率值。
-   *                  Grid2D 定义在 “/mapping/2d/grid_2d.h” 中，继承了 GridInterface(/mapping/grid_interface.h)，
-   *                  Grid2D 又被 ProbabilityGrid 继承，定义在 “/mapping/2d/probability_grid.h” 中。
-   *                  基本数据都存储在类型为 Grid2D 的成员变量 grid_ 中。
-   * @return
+   * @param origin    子图的位置，原点坐标
+   * @param grid      子图实际用于保存数据的对象。
+   *                  Grid2D 变量，存储栅格化坐标和坐标上的概率值。
+   *                  Grid2D 定义在 "/mapping/2d/grid_2d.h" 中，继承了 GridInterface(/mapping/grid_interface.h)，
+   *                  Grid2D 又被 ProbabilityGrid 继承，定义在 "/mapping/2d/probability_grid.h" 中。
+   *                  子图的基本数据都存储在类型为 Grid2D 的成员变量 grid_ 中。
    */
   Submap2D(const Eigen::Vector2f& origin, std::unique_ptr<Grid2D> grid);
   explicit Submap2D(const proto::Submap2D& proto);
@@ -66,14 +67,23 @@ class Submap2D : public Submap {
 
   // Insert 'range_data' into this submap using 'range_data_inserter'. The
   // submap must not be finished yet.
-  // 利用 RangeDataInserterInterface 来插入并更新概率图。该接口在 “/mapping/range_data_inserter_interface.h” 中定义。
-  // ProbabilityGridRangeDataInserter2D 继承了该接口，定义在 “/mapping/2d/probability_grid_range_data_inserter_2d.h” 中。
+  // 使用 "range_data_inserter" 将 "range_data" 插入此子图中。子图必须尚未完成。
+  /**
+   * @brief InsertRangeData      将激光的扫描数据插入到 grid_ 对象中
+   * @param range_data           将要插入的扫描数据
+   * @param range_data_inserter  一个辅助的工具，实际就是类 ActiveSubmaps2D 中的成员 range_data_inserter_，具体负责插入数据的方式方法。
+   *                             利用 RangeDataInserterInterface 来插入并更新概率图。该接口在 “/mapping/range_data_inserter_interface.h” 中定义。
+   *                             ProbabilityGridRangeDataInserter2D 继承了该接口，定义在 “/mapping/2d/probability_grid_range_data_inserter_2d.h” 中。
+   */
   void InsertRangeData(const sensor::RangeData& range_data,
                        const RangeDataInserterInterface* range_data_inserter);
+  /**
+   * @brief Finish  负责终止子图的更新
+   */
   void Finish();
 
  private:
-  std::unique_ptr<Grid2D> grid_;  // 概率图数据存储在这里
+  std::unique_ptr<Grid2D> grid_;  // 用于保存子图具体内容的对象
 };
 
 // Except during initialization when only a single submap exists, there are
@@ -114,7 +124,7 @@ class ActiveSubmaps2D {
   // 将 "range_data" 插入子图集合
   /**
    * @brief InsertRangeData  将扫描数据插入到子图中
-   * @param range_data       扫描数据
+   * @param range_data       将要插入的扫描数据
    */
   void InsertRangeData(const sensor::RangeData& range_data);
 

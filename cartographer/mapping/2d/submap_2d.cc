@@ -74,10 +74,14 @@ proto::SubmapsOptions2D CreateSubmapsOptions2D(
   return options;
 }
 
-// 可以看到，在构造2D子图时，Submap的坐标系旋转角度设置为0。而原点由参数origin给出。
+// 构造函数。
+// 该函数有两个参数，其中 origin 给出了子图的位置，而 grid 则指示了子图实际用于保存数据的对象。
+// 在参数列表中通过父类 Submap 的构造函数设置了子图的位姿。
+// 可以看到，在构造 2D 子图时，Submap 的坐标系旋转角度设置为0，而原点由参数 origin 给出。
 Submap2D::Submap2D(const Eigen::Vector2f& origin, std::unique_ptr<Grid2D> grid)
     : Submap(transform::Rigid3d::Translation(
           Eigen::Vector3d(origin.x(), origin.y(), 0.))) {
+  // 通过 std::move 赋予成员变量 grid_
   grid_ = std::move(grid);
 }
 
@@ -135,7 +139,10 @@ void Submap2D::ToResponseProto(
   grid()->DrawToSubmapTexture(texture, local_pose());  // 调用 grid_ 中的 DrawToSubmapTexture 函数设置 response 中的 SubmapTexture 字段
 }
 
-// 利用 RangeDataInserterInterface 来插入并更新概率图
+// 将激光的扫描数据插入到 grid_ 对象中。该函数有两个参数。
+// range_data: 将要插入的扫描数据。
+// range_data_inserter: 是一个辅助的工具，实际就是类 ActiveSubmaps2D 中的成员
+//                      range_data_inserter_，具体负责插入数据的方式方法。
 void Submap2D::InsertRangeData(
     const sensor::RangeData& range_data,
     const RangeDataInserterInterface* range_data_inserter) {
@@ -147,11 +154,13 @@ void Submap2D::InsertRangeData(
   set_num_range_data(num_range_data() + 1);  // 插入的数据+1
 }
 
+// 负责终止子图的更新
 void Submap2D::Finish() {
   CHECK(grid_);
   CHECK(!finished());
-  // 计算裁剪栅格图
+  // 通知 grid_ 对象裁剪重叠的栅格
   grid_ = grid_->ComputeCroppedGrid();
+  // 通过父类的接口 set_finished() 更新完成标志
   set_finished(true);
 }
 
