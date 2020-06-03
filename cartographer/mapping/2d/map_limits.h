@@ -104,14 +104,13 @@ class MapLimits {
   }
 
  private:
-  double resolution_;       // 分辨率，程序中设置是0.05m，也就是5cm
-  Eigen::Vector2d max_;     // 这是一个浮点型二维向量，max_.x()和.y()分别表示x、y方向的最大值
-  /*
-   * （1）栅格化后的 x 和 y 方向的最大范围，以 pixel 为单位。
-   *     在 MapLimits 中根据最大范围 max_ 和分辨率 resolution 就可以创建 cell_limits。
-   * （2）CellLimits 定义在/mapping/2d/xy_index.h中，包括两个 int 型成员变量：
-   *     int num_x_cells; x方向划分的栅格数，也是 pixel 坐标情况下的最大范围
-   *     int num_y_cells; y方向划分的栅格数
+  double resolution_;    // 地图的分辨率，即一个栅格单元对应的地图尺寸。程序中设置是0.05m，也就是5cm。
+  Eigen::Vector2d max_;  // 这是一个浮点型二维向量，max_.x() 和 max_.y() 分别记录了地图的 x,y 方向的最大值。
+  /**
+   * 1. x 和 y 方向上的栅格数量。
+   *    在 MapLimits 中根据最大范围 max_ 和分辨率 resolution 就可以创建 cell_limits_。
+   * 2. 数据类型 CellLimits 定义在 "/mapping/2d/xy_index.h" 中，它是一个结构体，包括两个 int 型成员变量：
+   *    num_x_cells 是 x 轴上的栅格数量，num_y_cells 是 y 轴上的栅格数量。
    */
   CellLimits cell_limits_;
 };
