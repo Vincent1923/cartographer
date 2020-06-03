@@ -35,43 +35,47 @@ class Grid2D : public GridInterface {
  public:
   /**
    * @brief Grid2D                   构造函数
-   * @param limits                   地图范围
-   * @param min_correspondence_cost  一个pixel坐标是否不被occupied的概率的最小值
-   * @param max_correspondence_cost  一个pixel坐标是否不被occupied的概率的最大值
-   *                                 probability表示一个pixel坐标被occupied的概率；
+   * @param limits                   地图的范围
+   * @param min_correspondence_cost  栅格空闲概率 p(free) 的最小值
+   * @param max_correspondence_cost  栅格空闲概率 p(free) 的最大值
+   *                                 probability 表示栅格单元被占用的概率；
    *                                 probability + correspondence_cost = 1
-   * @return
    */
   explicit Grid2D(const MapLimits& limits, float min_correspondence_cost,
                   float max_correspondence_cost);
   explicit Grid2D(const proto::Grid2D& proto);
 
   // Returns the limits of this Grid2D.
-  // 返回该栅格地图的范围、分辨率等
+  // 返回该栅格地图的范围
   const MapLimits& limits() const { return limits_; }
 
   // Finishes the update sequence.
   // 停止更新
   void FinishUpdate();
   // Returns the correspondence cost of the cell with 'cell_index'.
-  // 返回一个坐标的CorrespondenceCost值
+  // 返回索引为 "cell_index" 的栅格单元的空闲概率值。这里的索引是像素坐标。
   float GetCorrespondenceCost(const Eigen::Array2i& cell_index) const;
 
   // Returns the minimum possible correspondence cost.
-  // 获取最小值
+  // 返回栅格空闲概率 p(free) 的最小值。
   float GetMinCorrespondenceCost() const { return min_correspondence_cost_; }
 
   // Returns the maximum possible correspondence cost.
-  // 获取最大值
+  // 返回栅格空闲概率 p(free) 的最大值。
   float GetMaxCorrespondenceCost() const { return max_correspondence_cost_; }
 
   // Returns true if the probability at the specified index is known.
-  // 判断一个pixel是否已经有相应的概率值
+  // 判断指定索引处的栅格单元是否有已知的空闲概率值。这里的索引是像素坐标。
   bool IsKnown(const Eigen::Array2i& cell_index) const;
 
   // Fills in 'offset' and 'limits' to define a subregion of that contains all
   // known cells.
-  // 进行一下裁剪。裁剪一个subregion，使得该subregion包含了所有的已有概率值的cells。
+  // 填充 "offset" 和 "limits"，以定义一个包含所有已知栅格单元的子区域。
+  /**
+   * @brief ComputeCroppedLimits  获取包含所有已知栅格的子区域
+   * @param offset                记录了子区域的起点
+   * @param limits                描述了从 offset 开始的矩形框
+   */
   void ComputeCroppedLimits(Eigen::Array2i* const offset,
                             CellLimits* const limits) const;
 
@@ -81,7 +85,7 @@ class Grid2D : public GridInterface {
   // 必要时grow我们的submap。这是一个虚函数。
   virtual void GrowLimits(const Eigen::Vector2f& point);
 
-  // 得到一个裁剪后的栅格图
+  // 用于裁剪子图
   virtual std::unique_ptr<Grid2D> ComputeCroppedGrid() const = 0;
 
   // 写入proto流
@@ -114,15 +118,18 @@ class Grid2D : public GridInterface {
   int ToFlatIndex(const Eigen::Array2i& cell_index) const;
 
  private:
-  MapLimits limits_;                               // 地图范围
-  std::vector<uint16> correspondence_cost_cells_;  // 存储概率值，这里的概率值是Free的概率值
-  float min_correspondence_cost_;                  // 一个pixel坐标是否不被occupied的概率的最小值
-  float max_correspondence_cost_;                  // 一个pixel坐标是否不被occupied的概率的最大值
-  std::vector<int> update_indices_;                // 更新的索引
+  MapLimits limits_;                               // 地图的范围
+  // 记录各个栅格单元的空闲概率 p(free)，0表示对应栅格概率未知，[1, 32767] 表示空闲概率。
+  // 可以通过一对儿函数 CorrespondenceCostToValue() 和 ValueToCorrespondenceCost() 相互转换。
+  // Cartographer 通过查表的方式更新栅格单元的占用概率。
+  std::vector<uint16> correspondence_cost_cells_;
+  float min_correspondence_cost_;                  // 栅格空闲概率 p(free) 的最小值
+  float max_correspondence_cost_;                  // 栅格空闲概率 p(free) 最大值
+  std::vector<int> update_indices_;                // 记录更新过的栅格单元的存储索引
 
   // Bounding box of known cells to efficiently compute cropping limits.
-  // 维护一个已知概率值的所有cells的盒子。方便计算裁剪范围。
-  Eigen::AlignedBox2i known_cells_box_;            //存放Submap已经赋值过的一个子区域的盒子
+  // 维护一个已知概率值的所有栅格单元的盒子。方便计算裁剪范围。
+  Eigen::AlignedBox2i known_cells_box_;            // 一个用于记录哪些栅格单元中有值的数据结构
 };
 
 }  // namespace mapping

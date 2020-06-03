@@ -98,7 +98,7 @@ float Grid2D::GetCorrespondenceCost(const Eigen::Array2i& cell_index) const {
 }
 
 // Returns true if the correspondence cost at the specified index is known.
-// 判断一个指定坐标是否已经有概率值
+// 判断指定索引处的栅格单元是否有已知的空闲概率值。这里的索引是像素坐标。
 bool Grid2D::IsKnown(const Eigen::Array2i& cell_index) const {
   // kUnknownCorrespondenceValue = 0
   return limits_.Contains(cell_index) &&
@@ -108,7 +108,9 @@ bool Grid2D::IsKnown(const Eigen::Array2i& cell_index) const {
 
 // Fills in 'offset' and 'limits' to define a subregion of that contains all
 // known cells.
-// 圈出来一个子区域
+// 获取包含所有已知栅格的子区域。
+// 函数有两个输入参数，这两个参数可以看作函数的返回值。
+// 其中 offset 记录了子区域的起点，cell_limits 则描述了从 offset 开始的矩形框。
 void Grid2D::ComputeCroppedLimits(Eigen::Array2i* const offset,
                                   CellLimits* const limits) const {
   if (known_cells_box_.isEmpty()) {
