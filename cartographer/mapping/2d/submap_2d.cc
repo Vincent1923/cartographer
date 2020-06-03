@@ -74,10 +74,14 @@ proto::SubmapsOptions2D CreateSubmapsOptions2D(
   return options;
 }
 
-// 构造函数。
-// 该函数有两个参数，其中 origin 给出了子图的位置，而 grid 则指示了子图实际用于保存数据的对象。
-// 在参数列表中通过父类 Submap 的构造函数设置了子图的位姿。
-// 可以看到，在构造 2D 子图时，Submap 的坐标系旋转角度设置为0，而原点由参数 origin 给出。
+/**
+ * 1. 构造函数。
+ * 2. 该函数有两个参数，其中 origin 给出了子图的位置，而 grid 则指示了子图实际用于保存数据的对象。
+ * 3. 主要有两个工作：
+ *    第一个是在参数列表中通过父类 Submap 的构造函数设置了子图的位姿 local_pose_，
+ *    可以看到，Submap 的坐标系旋转角度设置为0，而原点由参数 origin 给出。
+ *    第二个是利用输入参数 grid 完成对 grid_ 的初始化。
+ */
 Submap2D::Submap2D(const Eigen::Vector2f& origin, std::unique_ptr<Grid2D> grid)
     : Submap(transform::Rigid3d::Translation(
           Eigen::Vector3d(origin.x(), origin.y(), 0.))) {
@@ -147,7 +151,7 @@ void Submap2D::InsertRangeData(
     const sensor::RangeData& range_data,
     const RangeDataInserterInterface* range_data_inserter) {
   CHECK(grid_);  // 检查是否栅格化
-  CHECK(!finished());  // 检查图是否已被 finished
+  CHECK(!finished());  // 需要确保子图更新还没有结束
   // 调用 RangeDataInserterInterface 来更新概率图
   // range_data 表示激光测距仪一帧的数据，其中 origin 表示原点，returns 表示 hits 的点集合，misses 表示 free 的点集合。
   range_data_inserter->Insert(range_data, grid_.get());

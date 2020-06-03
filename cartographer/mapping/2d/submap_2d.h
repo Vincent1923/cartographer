@@ -43,7 +43,8 @@ proto::SubmapsOptions2D CreateSubmapsOptions2D(
 class Submap2D : public Submap {
  public:
   /**
-   * @brief Submap2D  构造函数
+   * @brief Submap2D  构造函数。
+   *                  主要有两个工作：第一个是设置了子图的位姿 local_pose_，第二个是利用输入参数 grid 完成对 grid_ 的初始化。
    * @param origin    子图的位置，原点坐标
    * @param grid      子图实际用于保存数据的对象。
    *                  Grid2D 变量，存储栅格化坐标和坐标上的概率值。
