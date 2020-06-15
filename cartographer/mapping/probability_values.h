@@ -162,6 +162,11 @@ inline uint16 CorrespondenceCostValueToProbabilityValue(
 }
 
 std::vector<uint16> ComputeLookupTableToApplyOdds(float odds);
+/**
+ * @brief ComputeLookupTableToApplyCorrespondenceCostOdds  用于构建查找表
+ * @param odds                                             C(hit) 或 C(miss)，分别表示 hit 事件和 miss 事件发生时的更新系数
+ * @return                                                 hit 事件或 miss 事件的查找表
+ */
 std::vector<uint16> ComputeLookupTableToApplyCorrespondenceCostOdds(float odds);
 
 }  // namespace mapping

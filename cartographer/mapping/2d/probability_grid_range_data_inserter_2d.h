@@ -37,27 +37,38 @@ proto::ProbabilityGridRangeDataInserterOptions2D
 CreateProbabilityGridRangeDataInserterOptions2D(
     common::LuaParameterDictionary* parameter_dictionary);
 
+// 插入器
 class ProbabilityGridRangeDataInserter2D : public RangeDataInserterInterface {
  public:
+  /**
+   * @brief ProbabilityGridRangeDataInserter2D  构造函数。它通过定义在 "probability_values.h" 文件中的函数
+   *                                            ComputeLookupTableToApplyCorrespondenceCostOdds() 完成查找表
+   *                                            hit_table_ 和 miss_table_ 的初始化工作。
+   * @param options                             插入器的配置
+   */
   explicit ProbabilityGridRangeDataInserter2D(
       const proto::ProbabilityGridRangeDataInserterOptions2D& options);
 
+  // 屏蔽了拷贝构造和拷贝赋值
   ProbabilityGridRangeDataInserter2D(
       const ProbabilityGridRangeDataInserter2D&) = delete;
   ProbabilityGridRangeDataInserter2D& operator=(
       const ProbabilityGridRangeDataInserter2D&) = delete;
 
   // Inserts 'range_data' into 'probability_grid'.
-  // 向栅格化地图中插入传感器数据
-  // Insert 函数调用了 CastRays 函数来处理传感器数据
-  // range_data 表示激光测距仪一帧的数据，其中 origin 表示原点，returns 表示 hits 的点集合，misses 表示 free 的点集合。
+  // 将 "range_data" 插入 "probability_grid"。
+  /**
+   * @brief Insert      将激光扫描数据插入到栅格地图中
+   * @param range_data  将要插入的扫描数据
+   * @param grid        栅格地图
+   */
   virtual void Insert(const sensor::RangeData& range_data,
                       GridInterface* grid) const override;
 
  private:
-  const proto::ProbabilityGridRangeDataInserterOptions2D options_;
-  const std::vector<uint16> hit_table_;
-  const std::vector<uint16> miss_table_;
+  const proto::ProbabilityGridRangeDataInserterOptions2D options_;  // 记录了插入器的配置
+  const std::vector<uint16> hit_table_;                             // 用于更新栅格单元的占用概率的查找表
+  const std::vector<uint16> miss_table_;                            // 用于更新栅格单元的占用概率的查找表
 };
 
 }  // namespace mapping

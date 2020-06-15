@@ -96,13 +96,21 @@ std::vector<uint16> ComputeLookupTableToApplyOdds(const float odds) {
 }
 // 但在 ComputeLookupTableToApplyOdds 这个转化里都加了一个 kUpdateMarker，相当于有了一个偏移，但为什么我没想明白
 
-// 基于同样的原理，ComputeLookupTableToApplyCorrespondenceCostOdds 是处理某一个 cell 的 CorrespondenceCostValue 已知时如何更新的情况
+// 函数 ComputeLookupTableToApplyCorrespondenceCostOdds() 用于构建查找表。
+// 它的输入参数是 C(hit) 或 C(miss)，分别表示 hit 事件和 miss 事件发生时的更新系数。
+// 它的作用是处理某一个单元格的空闲概率数值(CorrespondenceCostValue)如何进行更新的情况。
 std::vector<uint16> ComputeLookupTableToApplyCorrespondenceCostOdds(
     float odds) {
+  // 在函数一开始先临时建了一个容器用于保存返回结果。
   std::vector<uint16> result;
+  // 计算未知栅格更新后的数值。
+  // 首先对 odds 求逆将其转换成概率值(ProbabilityFromOdds)，再取反(ProbabilityToCorrespondenceCost)，
+  // 然后转换成为存储值(CorrespondenceCostToValue)，最后加上 kUpdateMarker 把结果塞进了 result 中。
   result.push_back(CorrespondenceCostToValue(ProbabilityToCorrespondenceCost(
                        ProbabilityFromOdds(odds))) +
                    kUpdateMarker);
+  // 然后在一个 for 循环中以同样费劲方式依次计算存储值从1到32767所对应的更新值并塞进 result 中返回。
+  // (*kValueToCorrespondenceCost)[cell] 是栅格存储值为 cell 时所对应的栅格的空闲概率。
   for (int cell = 1; cell != 32768; ++cell) {
     result.push_back(
         CorrespondenceCostToValue(
