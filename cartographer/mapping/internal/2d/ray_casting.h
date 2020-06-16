@@ -30,7 +30,16 @@ namespace mapping {
 
 // For each ray in 'range_data', inserts hits and misses into
 // 'probability_grid'. Hits are handled before misses.
-// 对于“range_data”中的每条射线，将 hits 和 misses 插入“probability_grid”中。Hits 先于 misses。
+// 对于 "range_data" 中的每条射线，将 hits 和 misses 插入 "probability_grid" 中。hits 先于 misses。
+/**
+ * @brief CastRays           一方面根据 RangeData 类型的扫描数据完成 RayCasting 操作，获得一次扫描测量过程中相关栅格的观测事件；
+ *                           另一方面，调用占用栅格的接口完成查表更新。
+ * @param range_data         将要处理的扫描数据
+ * @param hit_table          hit 事件的查找表，用于更新栅格单元的占用概率时需要的查找表
+ * @param miss_table         miss 事件的查找表，用于更新栅格单元的占用概率时需要的查找表
+ * @param insert_free_space  一个配置项，指是否更新发生 miss 事件的栅格单元的占用概率
+ * @param probability_grid   将要更新的占用栅格
+ */
 void CastRays(const sensor::RangeData& range_data,
               const std::vector<uint16>& hit_table,
               const std::vector<uint16>& miss_table, bool insert_free_space,

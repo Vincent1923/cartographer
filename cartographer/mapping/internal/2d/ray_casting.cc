@@ -168,56 +168,60 @@ void GrowAsNeeded(const sensor::RangeData& range_data,
 
 }  // namespace
 
-// 对于“range_data”中的每条射线，将 hits 和 misses 插入“probability_grid”中。Hits 先于 misses。
+// 函数 CastRays() 一方面根据 RangeData 类型的扫描数据完成 RayCasting 操作，
+// 获得一次扫描测量过程中相关栅格的观测事件；另一方面，调用占用栅格的接口完成查表更新。
+// 函数一共有五个输入参数。
+// range_data 就是将要处理的扫描数据；
+// hit_table 和 miss_table 则是更新栅格单元的占用概率时需要的查找表，分别用于 hit 事件和 miss 事件；
+// insert_free_space 是一个配置项，指是否更新发生 miss 事件的栅格单元的占用概率；
+// probability_grid 则是将要更新的占用栅格。
 void CastRays(const sensor::RangeData& range_data,
               const std::vector<uint16>& hit_table,
               const std::vector<uint16>& miss_table,
               const bool insert_free_space,
               ProbabilityGrid* const probability_grid) {
+  // 在该函数的一开始先通过函数 GrowAsNeeded() 适当的调整栅格地图的作用范围，让它能够覆盖雷达的所有扫描数据。
   GrowAsNeeded(range_data, probability_grid);
 
-  const MapLimits& limits = probability_grid->limits();  // 获取栅格地图的 limits
-  // 定义一个超分辨率像素，把当前的分辨率又划分成了 kSubpixelScale 份，这里 int kSubpixelScale = 1000
-  const double superscaled_resolution = limits.resolution() / kSubpixelScale;
-  // 根据超分辨率像素又生成了一个新的 MapLimits
+  // 然后获取扩展之后的作用范围，并构建一个分辨率更高的 Maplimits 对象，
+  // 将一个栅格单元分割成 kSubpixelScale × kSubpixelScale 个小块，这样是为了提高 RayCasting 的精度。
+  const MapLimits& limits = probability_grid->limits();  // 获取栅格地图扩展之后的作用范围
+  const double superscaled_resolution = limits.resolution() / kSubpixelScale;  // 划分后栅格的分辨率
+  // 构建一个分辨率更高的 Maplimits 对象
   const MapLimits superscaled_limits(
       superscaled_resolution, limits.max(),
       CellLimits(limits.cell_limits().num_x_cells * kSubpixelScale,  // 划分格数变成了 kSubpixelScale 倍
                  limits.cell_limits().num_y_cells * kSubpixelScale));
-  // 根据 RangeData 原点的前两项，获取其对应的栅格化坐标。该坐标是我们所求的射线的原点。
+  // 获取激光射线的起点在精细栅格中的索引，记录在 begin 对象下。
   const Eigen::Array2i begin =
       superscaled_limits.GetCellIndex(range_data.origin.head<2>());
   // Compute and add the end points.
-  // 定义一个向量集合，该集合存储 RangeData 中的 hits 的点。
+  // 遍历所有 hit 点，用容器 ends 记录下 hit 点在精细栅格中的索引。
   std::vector<Eigen::Array2i> ends;
-  // reserver 函数用来给 vector 预分配存储区大小，即 capacity 的值 ，但是没有给这段内存进行初始化。
-  // reserve 的参数 n 是推荐预分配内存的大小，实际分配的可能等于或大于这个值，即 n 大于 capacity 的值，
-  // 就会 reallocate 内存 capacity 的值会大于或者等于 n 。这样，当 vector 调用push_back函数使得 size 
-  // 超过原来的默认分配的 capacity 值时 避免了内存重分配开销。
-  // 这里就是根据 returns 集合的大小，给 ends 预分配一块存储区。
   ends.reserve(range_data.returns.size());
   for (const Eigen::Vector3f& hit : range_data.returns) {
-    // 遍历 returns 这个集合，把每个点先压入 ends 中，这里获取的是栅格化坐标
     ends.push_back(superscaled_limits.GetCellIndex(hit.head<2>()));
-    // ens.back() 返回的是 vector 中的最末尾项，也就是我们刚刚压入 vector 中的那一项；
-    // 这里我猜测，hit_table 就是预先计算好的。如果一个 cell，原先的值是 value，那么在检测到 hit 后应该更新为多少。
+    // 调用了占用栅格对象的 ApplyLookupTable() 函数查表更新占用概率。
+    // 这次调用的传参有两个，第一个参数将精细栅格下 hit 点索引重新转换成原始栅格分辨率下的索引，第二个参数就是待查的 hit 表。
+    // ens.back() 返回的是 vector 中的最末尾项，也就是我们刚刚压入 vector 中的那一项。
     probability_grid->ApplyLookupTable(ends.back() / kSubpixelScale, hit_table);
   }
 
+  // 如果配置不需要处理 miss 事件，直接返回就可以了。
   if (!insert_free_space) {
-  // 如果配置项里设置是不考虑 free space。那么函数到这里结束，只处理完 hit 后返回即可
-  // 否则的话，需要计算那条射线，射线中间的点都是 free space，同时，没有检测到 hit 的 misses 集里也都是 free
     return;
   }
 
   // Now add the misses.
-  // 处理 origin 跟 hit 之间的射线中间的点
+  // 然后通过函数 CastRay() 处理射线起点到 hit 点之间的栅格，把它们都看做是发生了 miss 事件的栅格，
+  // 查找 miss_table 更新占用概率。但是需要注意这里的 begin 和 end 都是精细栅格下的索引。
   for (const Eigen::Array2i& end : ends) {
     CastRay(begin, end, miss_table, probability_grid);
   }
 
   // Finally, compute and add empty rays based on misses in the range data.
-  // 同样处理 miss 集合中的点
+  // 最后处理 miss 点的情况，我们同样认为射线起点到 miss 点之间的栅格发生的都是 miss 事件，
+  // 调用函数 CastRay() 进行 RayCasting 并通过 miss_table 更新相应的占用概率。
   for (const Eigen::Vector3f& missing_echo : range_data.misses) {
     CastRay(begin, superscaled_limits.GetCellIndex(missing_echo.head<2>()),
             miss_table, probability_grid);

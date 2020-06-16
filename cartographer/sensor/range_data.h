@@ -29,19 +29,21 @@ namespace sensor {
 // detected. 'misses' are points in the direction of rays for which no return
 // was detected, and were inserted at a configured distance. It is assumed that
 // between the 'origin' and 'misses' is free space.
-// 光线以“origin”开始。“returns”是检测到障碍物的点。“misses”是在光线方向上未检测到返回的点，并以配置的距离插入。
-// 假定“origin”和“misses”之间是自由空间。
-//
-// origin 是一个3维向量，表示的是这一帧数据的原点。
-// returns 是那些检测到了 hits 的点，那么被 Hits 的点加入 hits 这个集合，相应地更改 submap 中的信息。
-// 而 origin 和 hits 中间的点也是 Free 的，需要归入到 misses 集合中。
-// misses 是那些没有检测到 return 的点，原点和 misses 形成的射线上的所有点都是 free Space，都需要归入 misses 集合中。
-// 上述所有的点的表示里，如果是 2d 情况的话，第三个元素是0。
-// RangeData 是 Cartographer 定义的激光雷达传感器测量数据的存储结构。
+// 光线以 "origin" 开始。"returns" 是检测到障碍物的点。"misses" 是在光线方向上未检测到返回的点，并以配置的距离插入。
+// 假定 "origin" 和 "misses" 之间是自由空间。
+/**
+ * 1. RangeData 是 Cartographer 定义的激光雷达传感器测量数据的存储结构。
+ * 2. 它有三个字段，其中 origin 用于描述当次扫描测量时激光雷达的位置，字段 returns 和 misses 记录了扫描到的 hit 点与 miss 点。
+ *    所谓的 hit 点是指在该点上扫描到了障碍物，该点所在的栅格单元就发生了一次 hit 事件。
+ *    miss 点所在的位置上并没有检测到障碍物，只是以传感器的最远有效距离记录下坐标而已。
+ *    origin 到 hit 点和 miss 点之间的空间都将被认为是空闲的，所对应的栅格单元则被看作发生了一次 miss 事件。
+ * 3. 字段 returns 和 misses 的数据类型是定义在 "point_cloud.h" 中的三维向量。
+ *    对于我们的二维地图而言，z轴的数据也就是向量的第三个元素为0。
+ */
 struct RangeData {
-  Eigen::Vector3f origin;  // 描述了传感器的坐标
-  PointCloud returns;      // 点云数据，表示有物体反射
-  PointCloud misses;       // 点云数据，表示空闲区域
+  Eigen::Vector3f origin;  // 描述当次扫描测量时激光雷达的位置
+  PointCloud returns;      // 记录了扫描到的 hit 点
+  PointCloud misses;       // 记录了扫描到的 miss 点
 };
 
 // Like 'RangeData', but with 'TimedPointClouds'.
