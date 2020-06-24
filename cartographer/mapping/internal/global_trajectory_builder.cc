@@ -67,8 +67,10 @@ class GlobalTrajectoryBuilder : public mapping::TrajectoryBuilderInterface {
   /**
    * @brief AddSensorData           处理点云数据，可以说该接口控制了整个 Cartographer 系统的运行过程。
    * @param sensor_id               点云数据的传感器主题名称
-   * @param timed_point_cloud_data  传感器产生的数据。cartographer_ros 使用 SensorBridge 将 ROS 系统中的激光扫描数据
+   * @param timed_point_cloud_data  机器人坐标系下的激光扫描数据。cartographer_ros 使用 SensorBridge将 ROS 系统中的激光扫描数据
    *                                转换成这里的 sensor::TimedPointCloudData 类型。
+   *                                TimedPointCloudData 类型的扫描数据包含三个字段，其中 time 是获取最后一个扫描点的时间，
+   *                                origin 是当次扫描测量时传感器在机器人坐标系下的位置，而 ranges 则是扫描数据在机器人坐标系下的空间坐标。
    */
   void AddSensorData(
       const std::string& sensor_id,

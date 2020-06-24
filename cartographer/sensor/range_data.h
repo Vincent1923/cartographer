@@ -41,7 +41,7 @@ namespace sensor {
  *    对于我们的二维地图而言，z轴的数据也就是向量的第三个元素为0。
  */
 struct RangeData {
-  Eigen::Vector3f origin;  // 描述当次扫描测量时激光雷达的位置
+  Eigen::Vector3f origin;  // 描述当次扫描测量时机器人的位置
   PointCloud returns;      // 记录了扫描到的 hit 点
   PointCloud misses;       // 记录了扫描到的 miss 点
 };

@@ -24,9 +24,12 @@
 namespace cartographer {
 namespace sensor {
 
+// 带时间信息的扫描数据
 struct TimedPointCloudData {
-  common::Time time;
-  Eigen::Vector3f origin;
+  common::Time time;       // 获取最后一个扫描点的时间
+  Eigen::Vector3f origin;  // 当次扫描测量时传感器在机器人坐标系下的位置
+  // 扫描数据在机器人坐标系下的空间坐标。
+  // 每个元素都是一个4维的向量，其中前三维的数据记录了扫描数据在机器人坐标系下的空间坐标，第四维的数据则记录了数据产生的时间。
   sensor::TimedPointCloud ranges;
 };
 
