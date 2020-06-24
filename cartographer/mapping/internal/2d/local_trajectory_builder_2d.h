@@ -53,7 +53,7 @@ class LocalTrajectoryBuilder2D {
   struct MatchingResult {
     common::Time time;                      // 扫描匹配发生的时间
     transform::Rigid3d local_pose;          // 在局部地图坐标系下的位姿
-    sensor::RangeData range_data_in_local;  // 局部的扫描数据
+    sensor::RangeData range_data_in_local;  // 在局部地图坐标系下的扫描数据
     // 'nullptr' if dropped by the motion filter.
     // 如果扫描匹配的结果被运动滤波器过滤了，那么字段 insertion_result 中记录的是一个空指针 "nullptr"。
     std::unique_ptr<const InsertionResult> insertion_result;  // 子图插入结果
@@ -80,9 +80,20 @@ class LocalTrajectoryBuilder2D {
   // `range_data` was acquired, `TimedPointCloudData::ranges` contains the
   // relative time of point with respect to `TimedPointCloudData::time`.
   //
-  // range data 累积完成后，返回“MatchingResult”，否则返回“nullptr”。
-  // 对于2D SLAM，range data 必须近似为水平。"TimedPointCloudData::time"是获取"range_data"中最后一个点的时间，
-  // "TimedPointCloudData::ranges"包含点相对于“TimedPointCloudData::time”的相对时间。
+  // 完成扫描数据 range data 的积累后，返回匹配结果 "MatchingResult"，否则返回 "nullptr"。
+  // 对于 2D SLAM，扫描数据必须近似为水平。
+  // "TimedPointCloudData::time" 是获取扫描数据 "range_data" 最后一个扫描点的时间，
+  // "TimedPointCloudData::ranges" 包含扫描点相对于 "TimedPointCloudData::time" 的时间。
+  /**
+   * @brief AddRangeData  添加激光传感器的扫描数据，该函数返回的就是一个 MatchingResult 的对象，这是扫描匹配后的结果，
+   *                      实际上该类型中有一个字段 insertion_result 用于描述把扫描数据插入子图的结果。
+   *                      该函数基本上完成了整个 Local SLAM 的业务。
+   * @param sensor_id     激光雷达的索引
+   * @param range_data    机器人坐标系下未经时间同步的扫描数据，它应该是从 ROS 系统中转换过来的。
+   *                      类型 TimedPointCloudData 包含三个字段，其中 time 是获取最后一个扫描点的时间，
+   *                      origin 是当次扫描测量时传感器在机器人坐标系下的位置，而 ranges 则是扫描数据在机器人坐标系下的空间坐标。
+   * @return              扫描匹配的结果
+   */
   std::unique_ptr<MatchingResult> AddRangeData(
       const std::string& sensor_id,
       const sensor::TimedPointCloudData& range_data);
@@ -100,6 +111,15 @@ class LocalTrajectoryBuilder2D {
   static void RegisterMetrics(metrics::FamilyFactory* family_factory);
 
  private:
+  /**
+   * @brief AddAccumulatedRangeData     添加累积的传感器数据，完成 Local SLAM 的几项核心任务，主要是进行扫描匹配、把数据插入子图等操作，
+   *                                    并返回记录了子图插入结果的扫描匹配结果。
+   * @param time                        当前同步时间
+   * @param gravity_aligned_range_data  经过重力修正后的传感器数据，数据的原点 origin 坐标近似为 (0,0)
+   * @param gravity_alignment           重力方向，translation 近似为 (0,0,0)，rotation 为当前机器人在局部地图坐标系下的方向，
+   *                                    所以只包含机器人在局部地图坐标系下的方向信息。
+   * @return                            扫描匹配的结果
+   */
   std::unique_ptr<MatchingResult> AddAccumulatedRangeData(
       common::Time time, const sensor::RangeData& gravity_aligned_range_data,
       const transform::Rigid3d& gravity_alignment);
@@ -108,6 +128,18 @@ class LocalTrajectoryBuilder2D {
       const transform::Rigid3f& transform_to_gravity_aligned_frame,
       const sensor::RangeData& range_data) const;
 
+  /**
+   * @brief InsertIntoSubmap            将传感器数据插入到当前正在维护的子图中
+   * @param time                        当前同步时间
+   * @param range_data_in_local         在优化之后的位姿估计下观测到的 hit 点和 miss 点在局部地图坐标系下的点云数据，类型为 RangeData，
+   *                                    包含三个字段，其中 origin 是当次扫描测量时机器人在局部地图坐标系的位置，
+   *                                    returns 和 misses 则分别记录了 hit 点和 miss 点在局部地图坐标系下的空间坐标。
+   * @param gravity_aligned_range_data  扫描匹配之前执行了重力修正的扫描数据，数据的原点 origin 坐标近似为 (0,0)。
+   * @param pose_estimate               优化之后的位姿估计
+   * @param gravity_alignment           重力方向，translation 近似为 (0,0,0)，rotation 为当前机器人在局部地图坐标系下的方向，
+   *                                    所以只包含机器人在局部地图坐标系下的方向信息。
+   * @return                            子图插入结果
+   */
   std::unique_ptr<InsertionResult> InsertIntoSubmap(
       common::Time time, const sensor::RangeData& range_data_in_local,
       const sensor::RangeData& gravity_aligned_range_data,
@@ -116,7 +148,15 @@ class LocalTrajectoryBuilder2D {
 
   // Scan matches 'gravity_aligned_range_data' and returns the observed pose,
   // or nullptr on failure.
-  // 对'gravity_aligned_range_data'扫描匹配并返回观察到的位姿，如果失败则返回 nullptr
+  // 对 "gravity_aligned_range_data" 进行扫描匹配并返回观察到的位姿，如果失败则返回 nullptr。
+  /**
+   * @brief ScanMatch                   进行扫描匹配，主要是将当前的传感器数据与当前维护的子图进行匹配，寻找一个位姿估计使得传感器数据能够尽可能的与地图匹配上。
+   *                                    这是一个最优化的问题，Cartographer 主要通过 ceres 库求解。
+   * @param time                        参考时间
+   * @param pose_prediction             位姿估计器预测的位姿
+   * @param gravity_aligned_range_data  经过重力修正之后的扫描数据
+   * @return                            位姿估计，使得传感器数据能够尽可能的与地图匹配上
+   */
   std::unique_ptr<transform::Rigid2d> ScanMatch(
       common::Time time, const transform::Rigid2d& pose_prediction,
       const sensor::RangeData& gravity_aligned_range_data);
@@ -140,8 +180,11 @@ class LocalTrajectoryBuilder2D {
 
   std::unique_ptr<PoseExtrapolator> extrapolator_;  // 位姿估计器，用一段时间内的位姿数据估计线速度和角速度，进而预测运动
 
-  int num_accumulated_ = 0;                                     // 累积数据的数量
-  sensor::RangeData accumulated_range_data_;                    // 累积的扫描数据
+  int num_accumulated_ = 0;  // 累积数据的数量
+  // 累积的扫描数据。
+  // 类型 RangeData 包含三个字段，其中 origin 是当次扫描测量时机器人在局部地图坐标系的位置，
+  // returns 和 misses 则分别记录了扫描到的 hit 点和 miss 点在局部地图坐标系下的空间坐标。
+  sensor::RangeData accumulated_range_data_;
   std::chrono::steady_clock::time_point accumulation_started_;  // 开始累积数据的时间，也是开始跟踪轨迹的时间
 
   RangeDataCollator range_data_collator_;  // 累积数据收集器
