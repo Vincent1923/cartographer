@@ -47,19 +47,36 @@ LocalTrajectoryBuilder2D::LocalTrajectoryBuilder2D(
 
 LocalTrajectoryBuilder2D::~LocalTrajectoryBuilder2D() {}
 
-// 将 RangeData 转化成重力校正后的数据，并经过 VoxelFilter。
-// 关于 VoxelFilter 和 AdaptiveVoxelFilter，可参见如下两个参考链接：
-// 源码解读：https://blog.csdn.net/learnmoreonce/article/details/76218136
-// VoxelFilter 的原理：https://blog.csdn.net/xiaoma_bk/article/details/81780066
-// cartographer 中的 VoxelFilter 是把空间分为很多个立方体的栅格，然后一个栅格内可能有很多点，
-// 但只用一个点来代表整个栅格中的所有点。
-// 简单说，这些滤波就是对点云数据的预处理：去除不合理的范围的点、合并相同位置的点等，从而减少点云数量，提高点云质量。
+/**
+ * 1. 这个函数主要是以重力方向为参考修正传感器数据后进行体素化滤波。
+ *    实际上是把局部地图坐标系下的扫描数据平移到机器人坐标系上，但是不旋转。
+ * 2. 函数有两个输入参数。
+ *    transform_to_gravity_aligned_frame 表示局部地图坐标系到机器人坐标系下的重力方向的变换，
+ *    其中 translation 为局部地图坐标系到机器人坐标系的平移，而 rotation 以四元数表示，近似为 (0,0,0,1)，即旋转角度近似为0。
+ *    range_data 则是局部地图坐标系下的扫描数据。
+ * 3. Cartographer 中的体素化滤波是把空间分为很多个立方体的栅格，然后一个栅格内可能有很多点，但只用一个点来代表整个栅格中的所有点。
+ *    简单说，这些滤波就是对点云数据的预处理：去除不合理的范围的点、合并相同位置的点等，从而减少点云数量，提高点云质量。
+ */
 sensor::RangeData
 LocalTrajectoryBuilder2D::TransformToGravityAlignedFrameAndFilter(
     const transform::Rigid3f& transform_to_gravity_aligned_frame,
     const sensor::RangeData& range_data) const {
-  // 裁剪数据，指定一定 z 轴范围内的数据，数据范围在 options_.min_z() 到 options_.max_z() 之间。
-  // 在“/src/cartographer/configuration_files/trajectory_builder_2d.lua”中找到。
+  // std::cout << "transform_to_gravity_aligned_frame translation: " 
+  //           << transform_to_gravity_aligned_frame.translation()[0] << " "
+  //           << transform_to_gravity_aligned_frame.translation()[1] << " "
+  //           << transform_to_gravity_aligned_frame.translation()[2] << std::endl;
+  // std::cout << "transform_to_gravity_aligned_frame rotation: " << transform_to_gravity_aligned_frame.rotation().x() << " "
+  //                                             << transform_to_gravity_aligned_frame.rotation().y() << " "
+  //                                             << transform_to_gravity_aligned_frame.rotation().z() << " "
+  //                                             << transform_to_gravity_aligned_frame.rotation().w() << std::endl;
+  /**
+   * 1. 把局部地图坐标系下的扫描数据平移到机器人坐标系上，但是不旋转，并对数据进行裁剪。
+   * 2. 函数 TransformRangeData() 是把局部地图坐标系下的扫描数据平移到机器人坐标系上，但是不旋转。
+   * 3. 函数 CropRangeData() 是裁剪数据，指定一定 z 轴范围内的数据，数据范围在 options_.min_z() 到 options_.max_z() 之间。
+   *    参数在文件 "/src/cartographer/configuration_files/trajectory_builder_2d.lua" 中配置。
+   * 4. 返回的扫描数据 cropped 包含三个字段，其中 origin 近似为 (0,0,0)，而 returns 和 misses
+   *    则分别是局部地图坐标系下的 hit 点和 miss 点经过平移后在机器人坐标系下的空间坐标，但没有经过旋转。
+   */
   const sensor::RangeData cropped =
       sensor::CropRangeData(sensor::TransformRangeData(
                                 range_data, transform_to_gravity_aligned_frame),
@@ -76,8 +93,8 @@ LocalTrajectoryBuilder2D::TransformToGravityAlignedFrameAndFilter(
 // 这是一个最优化的问题，Cartographer 主要通过 ceres 库求解。
 // 它有三个参数，
 // time 是参考时间，
-// pose_prediction 是位姿估计器预测的位姿，
-// gravity_aligned_range_data 是经过重力修正之后的扫描数据。
+// pose_prediction 是位姿估计器预测的位姿，只包含机器人在局部地图坐标系下的位置信息，但不包含方向信息。
+// gravity_aligned_range_data 经过重力修正后的传感器数据，从局部地图坐标系平移到机器人坐标系下的扫描数据，但没有经过旋转。
 std::unique_ptr<transform::Rigid2d> LocalTrajectoryBuilder2D::ScanMatch(
     const common::Time time, const transform::Rigid2d& pose_prediction,
     const sensor::RangeData& gravity_aligned_range_data) {
@@ -290,16 +307,25 @@ LocalTrajectoryBuilder2D::AddRangeData(
   if (num_accumulated_ >= options_.num_accumulated_range_data()) {
     // 先将计数清零
     num_accumulated_ = 0;
-    // 通过位姿估计器获取重力的方向
+    // 通过位姿估计器获取重力的方向。
+    // 对于单线激光扫描消息 laser_scan，重力方向 gravity_alignment 的平移 translation 为 (0,0,0)，
+    // 而旋转 rotation 为机器人在局部地图坐标系下的方向，以四元数表示。
+    // 所以 gravity_alignment 包含机器人在局部地图坐标系下的方向信息。
     const transform::Rigid3d gravity_alignment = transform::Rigid3d::Rotation(
         extrapolator_->EstimateGravityOrientation(time));
     // TODO(gaschler): This assumes that 'range_data_poses.back()' is at time
     // 'time'.
     // 记录下当前的累积位姿，这是最后一个扫描点对应的机器人在局部地图坐标系下的位姿
     accumulated_range_data_.origin = range_data_poses.back().translation();
-    // 调用函数 AddAccumulatedRangeData() 进行扫描匹配、插入数据等工作，并返回扫描匹配的结果。
-    // 在给函数 AddAccumulatedRangeData() 传参的时候调用了函数 TransformToGravityAlignedFrameAndFilter()，
-    // 这个函数主要是以重力方向为参考修正传感器数据后进行体素化滤波。
+    /**
+     * 1. 调用函数 AddAccumulatedRangeData() 进行扫描匹配、插入数据等工作，并返回扫描匹配的结果。
+     * 2. 在给函数 AddAccumulatedRangeData() 传参的时候调用了函数 TransformToGravityAlignedFrameAndFilter()，
+     *    这个函数主要是以重力方向为参考修正传感器数据后进行体素化滤波。
+     *    实际上是把局部地图坐标系下的扫描数据平移到机器人坐标系上，但是不旋转。
+     *    函数 TransformToGravityAlignedFrameAndFilter() 第一个参数的类型为 transform::Rigid3f，
+     *    表示局部地图坐标系到机器人坐标系下的重力方向的变换，其中 translation 为局部地图坐标系到机器人坐标系的平移，
+     *    而 rotation 以四元数表示，近似为 (0,0,0,1)，即旋转角度近似为0。
+     */
     return AddAccumulatedRangeData(
         time,
         TransformToGravityAlignedFrameAndFilter(
@@ -314,7 +340,7 @@ LocalTrajectoryBuilder2D::AddRangeData(
 // 并返回记录了子图插入结果的扫描匹配结果。
 // 它有三个参数：
 // time 是当前同步时间，
-// gravity_aligned_range_data 则是经过重力修正后的传感器数据，数据的原点 origin 坐标近似为 (0,0)，
+// gravity_aligned_range_data 则是经过重力修正后的传感器数据，从局部地图坐标系平移到机器人坐标系下的扫描数据，但没有经过旋转，
 // gravity_alignment 是重力方向，translation 近似为 (0,0,0)，rotation 为当前机器人在局部地图坐标系下的方向，
 // 所以只包含机器人在局部地图坐标系下的方向信息。
 std::unique_ptr<LocalTrajectoryBuilder2D::MatchingResult>
@@ -337,8 +363,9 @@ LocalTrajectoryBuilder2D::AddAccumulatedRangeData(
   const transform::Rigid3d non_gravity_aligned_pose_prediction =
       extrapolator_->ExtrapolatePose(time);
   // 计算重力修正之后的机器人位姿 pose_prediction。
-  // 这里需要注意，在经过重力修正之后，pose_prediction 只包含机器人在局部地图坐标系下的位置信息，
-  // 但不包含方向信息，即 pose_prediction 表示方向的四元数近似为 (0,0,0,1)。
+  // 这里需要注意，pose_prediction 的 translation 为机器人在局部地图坐标系下的位置，
+  // 而 rotation 用四元数表示后近似为 (0,0,0,1)。
+  // 即 pose_prediction 只包含机器人在局部地图坐标系下的位置信息，但不包含方向信息。
   // gravity_alignment 是重力方向，translation 近似为 (0,0,0)，rotation 为当前机器人在局部地图坐标系下的方向。
   const transform::Rigid2d pose_prediction = transform::Project2D(
       non_gravity_aligned_pose_prediction * gravity_alignment.inverse());
@@ -346,8 +373,9 @@ LocalTrajectoryBuilder2D::AddAccumulatedRangeData(
   // local map frame <- gravity-aligned frame
   // 通过函数 ScanMatch() 进行扫描匹配，并返回新的位姿估计 pose_estimate_2d。
   // pose_estimate_2d 是机器人在局部地图坐标系下的位姿估计。
-  // 同样地，pose_estimate_2d 也只包含机器人在局部地图坐标系下的位置信息，
-  // 但不包含方向信息，即 pose_estimate_2d 的方向也是近似为 (0,0,0,1)。
+  // 同样地，pose_estimate_2d 的 translation 为机器人在局部地图坐标系下的位置估计，
+  // 而 rotation 用四元数表示后近似为 (0,0,0,1)。
+  // 所以，pose_estimate_2d 也只包含机器人在局部地图坐标系下的位置信息，但不包含方向信息。
   std::unique_ptr<transform::Rigid2d> pose_estimate_2d =
       ScanMatch(time, pose_prediction, gravity_aligned_range_data);
   // Eigen::AngleAxis<double> rotation_vector =

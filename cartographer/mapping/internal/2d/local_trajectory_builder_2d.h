@@ -115,7 +115,9 @@ class LocalTrajectoryBuilder2D {
    * @brief AddAccumulatedRangeData     添加累积的传感器数据，完成 Local SLAM 的几项核心任务，主要是进行扫描匹配、把数据插入子图等操作，
    *                                    并返回记录了子图插入结果的扫描匹配结果。
    * @param time                        当前同步时间
-   * @param gravity_aligned_range_data  经过重力修正后的传感器数据，数据的原点 origin 坐标近似为 (0,0)
+   * @param gravity_aligned_range_data  经过重力修正后的传感器数据，从局部地图坐标系平移到机器人坐标系下的扫描数据，但没有经过旋转。
+   *                                    包含三个字段，其中 origin 近似为 (0,0,0)，而 returns 和 misses 则分别是
+   *                                    局部地图坐标系下的 hit 点和 miss 点经过平移后在机器人坐标系下的空间坐标，但没有经过旋转。
    * @param gravity_alignment           重力方向，translation 近似为 (0,0,0)，rotation 为当前机器人在局部地图坐标系下的方向，
    *                                    所以只包含机器人在局部地图坐标系下的方向信息。
    * @return                            扫描匹配的结果
@@ -123,7 +125,19 @@ class LocalTrajectoryBuilder2D {
   std::unique_ptr<MatchingResult> AddAccumulatedRangeData(
       common::Time time, const sensor::RangeData& gravity_aligned_range_data,
       const transform::Rigid3d& gravity_alignment);
-  // 将 RangeData 转化成重力校正后的数据，并经过 VoxelFilter
+  /**
+   * @brief TransformToGravityAlignedFrameAndFilter  这个函数主要是以重力方向为参考修正传感器数据后进行体素化滤波。
+   *                                                 实际上是把局部地图坐标系下的扫描数据平移到机器人坐标系上，但是不旋转。
+   * @param transform_to_gravity_aligned_frame       表示局部地图坐标系到机器人坐标系下的重力方向的变换，
+   *                                                 其中 translation 为局部地图坐标系到机器人坐标系的平移，
+   *                                                 而 rotation 以四元数表示，近似为 (0,0,0,1)，即旋转角度近似为0。
+   * @param range_data                               局部地图坐标系下的扫描数据。
+   *                                                 包含三个字段，其中 origin 是当次扫描测量时机器人在局部地图坐标系的位置，
+   *                                                 而 returns 和 misses 则分别记录了扫描到的 hit 点和 miss 点在局部地图坐标系下的空间坐标。
+   * @return                                         从局部地图坐标系平移到机器人坐标系下但没有经过旋转，并经过体素化滤波后的扫描数据。
+   *                                                 包含三个字段，其中 origin 近似为 (0,0,0)，而 returns 和 misses 则分别是
+   *                                                 局部地图坐标系下的 hit 点和 miss 点经过平移后在机器人坐标系下的空间坐标，但没有经过旋转。
+   */
   sensor::RangeData TransformToGravityAlignedFrameAndFilter(
       const transform::Rigid3f& transform_to_gravity_aligned_frame,
       const sensor::RangeData& range_data) const;
@@ -153,9 +167,15 @@ class LocalTrajectoryBuilder2D {
    * @brief ScanMatch                   进行扫描匹配，主要是将当前的传感器数据与当前维护的子图进行匹配，寻找一个位姿估计使得传感器数据能够尽可能的与地图匹配上。
    *                                    这是一个最优化的问题，Cartographer 主要通过 ceres 库求解。
    * @param time                        参考时间
-   * @param pose_prediction             位姿估计器预测的位姿
-   * @param gravity_aligned_range_data  经过重力修正之后的扫描数据
-   * @return                            位姿估计，使得传感器数据能够尽可能的与地图匹配上
+   * @param pose_prediction             位姿估计器预测的位姿。
+   *                                    translation 为机器人在局部地图坐标系下的位置，而 rotation 用四元数表示后近似为 (0,0,0,1)。
+   *                                    所以它只包含机器人在局部地图坐标系下的位置信息，但不包含方向信息。
+   * @param gravity_aligned_range_data  经过重力修正后的传感器数据，从局部地图坐标系平移到机器人坐标系下的扫描数据，但没有经过旋转。
+   *                                    包含三个字段，其中 origin 近似为 (0,0,0)，而 returns 和 misses 则分别是
+   *                                    局部地图坐标系下的 hit 点和 miss 点经过平移后在机器人坐标系下的空间坐标，但没有经过旋转。
+   * @return                            位姿估计，使得传感器数据能够尽可能的与地图匹配上。
+   *                                    translation 为机器人在局部地图坐标系下的位置估计，而 rotation 用四元数表示后近似为 (0,0,0,1)。
+   *                                    所以返回值也只包含机器人在局部地图坐标系下的位置信息，但不包含方向信息。
    */
   std::unique_ptr<transform::Rigid2d> ScanMatch(
       common::Time time, const transform::Rigid2d& pose_prediction,
@@ -181,7 +201,7 @@ class LocalTrajectoryBuilder2D {
   std::unique_ptr<PoseExtrapolator> extrapolator_;  // 位姿估计器，用一段时间内的位姿数据估计线速度和角速度，进而预测运动
 
   int num_accumulated_ = 0;  // 累积数据的数量
-  // 累积的扫描数据。
+  // 累积的扫描数据，局部地图坐标系下的扫描数据。
   // 类型 RangeData 包含三个字段，其中 origin 是当次扫描测量时机器人在局部地图坐标系的位置，
   // returns 和 misses 则分别记录了扫描到的 hit 点和 miss 点在局部地图坐标系下的空间坐标。
   sensor::RangeData accumulated_range_data_;
