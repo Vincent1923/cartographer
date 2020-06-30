@@ -32,6 +32,8 @@ proto::CeresSolverOptions CreateCeresSolverOptionsProto(
   return proto;
 }
 
+// 加载 Ceres 优化库的配置。
+// 函数有一个输入参数 proto，这是从 lua 文件获取的Ceres 优化库的配置项。
 ceres::Solver::Options CreateCeresSolverOptions(
     const proto::CeresSolverOptions& proto) {
   ceres::Solver::Options options;

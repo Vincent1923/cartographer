@@ -27,6 +27,11 @@ namespace common {
 proto::CeresSolverOptions CreateCeresSolverOptionsProto(
     common::LuaParameterDictionary* parameter_dictionary);
 
+/**
+ * @brief CeresScanMatcher2D  加载 Ceres 优化库的配置
+ * @param options             Ceres 优化库的配置项，从 lua 文件中获取。
+ * @return                    Ceres 优化库的配置项
+ */
 ceres::Solver::Options CreateCeresSolverOptions(
     const proto::CeresSolverOptions& proto);
 
