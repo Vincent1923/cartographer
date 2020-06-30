@@ -175,6 +175,7 @@ NodeId PoseGraph2D::AddNode(
   // 根据 Cartographer 的思想，在该任务下应当会将新增的节点与所有已经处于 kFinished 状态的子图进行一次匹配建立可能存在的闭环约束。
   // 此外，当有新的子图进入 kFinished 状态时，还会将之与所有的节点进行一次匹配。所以这里会通过 insertion_submaps.front() 来查询旧图的更新状态。
   const bool newly_finished_submap = insertion_submaps.front()->finished();
+  LOG(WARNING) << "AddNode " << "(" << node_id.trajectory_id << ", " << node_id.node_index << ")";
   AddWorkItem([=]() REQUIRES(mutex_) {
     ComputeConstraintsForNode(node_id, insertion_submaps,
                               newly_finished_submap);
@@ -263,11 +264,17 @@ void PoseGraph2D::ComputeConstraint(const NodeId& node_id,
             .at(submap_id)
             .global_pose.inverse() *
         optimization_problem_->node_data().at(node_id).global_pose_2d;
+    LOG(WARNING) << "MaybeAddConstraint: "
+                 << "node " << "(" << node_id.trajectory_id << ", " << node_id.node_index << ") "
+                 << "submap " << "(" << submap_id.trajectory_id << ", " << submap_id.submap_index << ")";
     constraint_builder_.MaybeAddConstraint(
         submap_id, submap_data_.at(submap_id).submap.get(), node_id,
         trajectory_nodes_.at(node_id).constant_data.get(),
         initial_relative_pose);
   } else if (global_localization_samplers_[node_id.trajectory_id]->Pulse()) {
+    LOG(WARNING) << "MaybeAddGlobalConstraint: "
+                 << "node " << "(" << node_id.trajectory_id << ", " << node_id.node_index << ") "
+                 << "submap " << "(" << submap_id.trajectory_id << ", " << submap_id.submap_index << ")";
     constraint_builder_.MaybeAddGlobalConstraint(
         submap_id, submap_data_.at(submap_id).submap.get(), node_id,
         trajectory_nodes_.at(node_id).constant_data.get());
@@ -339,10 +346,15 @@ void PoseGraph2D::ComputeConstraintsForNode(
                                       Constraint::INTRA_SUBMAP});
   }
 
+  LOG(WARNING) << "Node " << "(" << node_id.trajectory_id << ", " << node_id.node_index << ") "
+               << "global_pose_2d " << global_pose_2d.translation()[0] << " " << global_pose_2d.translation()[1];
   // 紧接着遍历所有已经处于 kFinished 状态的子图，建立它们与新增节点之间可能的约束。
   for (const auto& submap_id_data : submap_data_) {
     if (submap_id_data.data.state == SubmapState::kFinished) {   // 筛选出处于 kFinished 状态的子图
       CHECK_EQ(submap_id_data.data.node_ids.count(node_id), 0);  // 检查该子图还没有跟该节点产生约束
+      LOG(WARNING) << "ComputeConstraint: "
+                   << "node " << "(" << node_id.trajectory_id << ", " << node_id.node_index << ") "
+                   << "submap " << "(" << submap_id_data.id.trajectory_id << ", " << submap_id_data.id.submap_index << ")";
       ComputeConstraint(node_id, submap_id_data.id);  // 计算该节点与子图的约束
     }
   }
@@ -366,6 +378,7 @@ void PoseGraph2D::ComputeConstraintsForNode(
   }
   // 通知约束构建器新增节点的操作结束
   constraint_builder_.NotifyEndOfNode();
+  LOG(WARNING) << "PoseGraph2D NotifyEndOfNode: " << "node (" << node_id.trajectory_id << ", " << node_id.node_index << ")";
   // 增加计数器 num_nodes_since_last_loop_closure_
   ++num_nodes_since_last_loop_closure_;
   CHECK(!run_loop_closure_);  // 检查没进行过 Loop Closure
@@ -418,6 +431,7 @@ void PoseGraph2D::UpdateTrajectoryConnectivity(const Constraint& constraint) {
 // 输入是由 ConstraintBuilder2D 建立起来的约束向量
 void PoseGraph2D::HandleWorkQueue(
     const constraints::ConstraintBuilder2D::Result& result) {
+  LOG(WARNING) << "HandleWorkQueue";
   {
     // 在处理数据时加上互斥锁，防止出现数据访问错误
     common::MutexLocker locker(&mutex_);
@@ -686,6 +700,7 @@ void PoseGraph2D::RunFinalOptimization() {
 }
 
 void PoseGraph2D::RunOptimization() {
+  LOG(WARNING) << "RunOptimization";
   // 先检查一下是否给后端优化器喂过数据
   if (optimization_problem_->submap_data().empty()) {
     return;
@@ -715,10 +730,18 @@ void PoseGraph2D::RunOptimization() {
     // 即用优化后的轨迹节点的位姿 node_data 来更新轨迹节点集合 trajectory_nodes_ 中对应 NodeId 的节点位姿。
     for (const auto& node : node_data.trajectory(trajectory_id)) {
       auto& mutable_trajectory_node = trajectory_nodes_.at(node.id);
+      LOG(WARNING) << "node (" << node.id.trajectory_id << ", " << node.id.node_index << ") "
+                   << "global_pose before "
+                   << mutable_trajectory_node.global_pose.translation()[0] << " "
+                   << mutable_trajectory_node.global_pose.translation()[1];
       mutable_trajectory_node.global_pose =
           transform::Embed3D(node.data.global_pose_2d) *
           transform::Rigid3d::Rotation(
               mutable_trajectory_node.constant_data->gravity_alignment);
+      LOG(WARNING) << "node (" << node.id.trajectory_id << ", " << node.id.node_index << ") "
+                   << "global_pose after "
+                   << mutable_trajectory_node.global_pose.translation()[0] << " "
+                   << mutable_trajectory_node.global_pose.translation()[1];
     }
 
     // Extrapolate all point cloud poses that were not included in the

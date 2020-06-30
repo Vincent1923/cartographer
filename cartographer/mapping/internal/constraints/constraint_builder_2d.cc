@@ -171,6 +171,7 @@ void ConstraintBuilder2D::NotifyEndOfNode() {
   finish_node_task_->SetWorkItem([this] {
     common::MutexLocker locker(&mutex_);
     ++num_finished_nodes_;
+    LOG(WARNING) << "ConstraintBuilder2D::NotifyEndOfNode: " << "num_finished_nodes_ " << num_finished_nodes_;
   });
   // 通过线程池的 Schedule 接口，将任务对象 finish_node_task_ 添加到线程池的调度队列中
   auto finish_node_task_handle =
@@ -243,6 +244,9 @@ void ConstraintBuilder2D::ComputeConstraint(
     const transform::Rigid2d& initial_relative_pose,
     const SubmapScanMatcher& submap_scan_matcher,
     std::unique_ptr<ConstraintBuilder2D::Constraint>* constraint) {
+  LOG(WARNING) << "ConstraintBuilder2D::ComputeConstraint: "
+               << "node " << "(" << node_id.trajectory_id << ", " << node_id.node_index << ") "
+               << "submap " << "(" << submap_id.trajectory_id << ", " << submap_id.submap_index << ")";
   // 在函数的一开始，先构建几个临时变量。
   // initial_pose 用于描述在世界坐标系下路径节点与子图之间的相对位置关系。
   const transform::Rigid2d initial_pose =
@@ -267,6 +271,7 @@ void ConstraintBuilder2D::ComputeConstraint(
     if (submap_scan_matcher.fast_correlative_scan_matcher->MatchFullSubmap(
             constant_data->filtered_gravity_aligned_point_cloud,
             options_.global_localization_min_score(), &score, &pose_estimate)) {
+      LOG(WARNING) << "match score " << score;
       CHECK_GT(score, options_.global_localization_min_score());
       CHECK_GE(node_id.trajectory_id, 0);
       CHECK_GE(submap_id.trajectory_id, 0);
@@ -280,6 +285,7 @@ void ConstraintBuilder2D::ComputeConstraint(
     if (submap_scan_matcher.fast_correlative_scan_matcher->Match(
             initial_pose, constant_data->filtered_gravity_aligned_point_cloud,
             options_.min_score(), &score, &pose_estimate)) {
+      LOG(WARNING) << "match score " << score;
       // We've reported a successful local match.
       CHECK_GT(score, options_.min_score());
       kConstraintsFoundMetric->Increment();
@@ -350,6 +356,8 @@ void ConstraintBuilder2D::RunWhenDoneCallback() {
                 << result.size() << " additional constraints.";
       LOG(INFO) << "Score histogram:\n" << score_histogram_.ToString(10);
     }
+    LOG(WARNING) << "RunWhenDoneCallback";
+    LOG(WARNING) << "constraints_size " << constraints_.size() << " result_size " << result.size();
     constraints_.clear();  // 清空约束列表 constraints_
     callback = std::move(when_done_);  // 用临时变量 callback 记录下回调函数对象
     when_done_.reset();  // 释放 when_done_ 指针
