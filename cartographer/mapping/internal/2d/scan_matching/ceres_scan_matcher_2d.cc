@@ -82,6 +82,9 @@ void CeresScanMatcher2D::Match(const Eigen::Vector2d& target_translation,
   // (1) 占用栅格与扫描数据的匹配度，
   // (2) 优化后的位置相对于 target_translation 的距离，
   // (3) 旋转角度相对于迭代初值的偏差。
+  // 对于优化结果添加位置偏差量和角度偏差量的限定，我个人理解，通过位姿估计器推测的位姿基本上就在真值附近，
+  // 如果优化后的结果出现了较大的偏差说明位姿跟丢了。
+  // 刚刚讨论的这两残差项顶多就是对匹配位姿的约束，真正的扫描匹配的主角是类 OccupiedSpaceCostFunction2D。
   ceres::Problem problem;
   CHECK_GT(options_.occupied_space_weight(), 0.);  // 检查 occupied_space_weight 是否大于0
   problem.AddResidualBlock(
@@ -101,9 +104,9 @@ void CeresScanMatcher2D::Match(const Eigen::Vector2d& target_translation,
           options_.rotation_weight(), ceres_pose_estimate[2]),
       nullptr /* loss function */, ceres_pose_estimate);
 
+  // 最后求解并更新位姿估计
   ceres::Solve(ceres_solver_options_, &problem, summary);
 
-  // 最后求解并更新位姿估计。
   *pose_estimate = transform::Rigid2d(
       {ceres_pose_estimate[0], ceres_pose_estimate[1]}, ceres_pose_estimate[2]);
 }
