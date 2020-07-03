@@ -33,7 +33,7 @@ namespace sensor {
 // 假定 "origin" 和 "misses" 之间是自由空间。
 /**
  * 1. RangeData 是 Cartographer 定义的激光雷达传感器测量数据的存储结构。
- * 2. 它有三个字段，其中 origin 用于描述当次扫描测量时激光雷达的位置，字段 returns 和 misses 记录了扫描到的 hit 点与 miss 点。
+ * 2. 它有三个字段，其中 origin 用于描述当次扫描测量时机器人的位置，字段 returns 和 misses 记录了扫描到的 hit 点与 miss 点。
  *    所谓的 hit 点是指在该点上扫描到了障碍物，该点所在的栅格单元就发生了一次 hit 事件。
  *    miss 点所在的位置上并没有检测到障碍物，只是以传感器的最远有效距离记录下坐标而已。
  *    origin 到 hit 点和 miss 点之间的空间都将被认为是空闲的，所对应的栅格单元则被看作发生了一次 miss 事件。

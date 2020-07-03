@@ -403,36 +403,52 @@ LocalTrajectoryBuilder2D::AddAccumulatedRangeData(
 
   /**
    * 1. 利用新的位姿估计，将传感器的数据转换到局部地图坐标系下。
-   *    这里需要注意，pose_estimate_2d 是机器人在局部地图坐标系下的位姿，实际上只包含位置信息。
-   *    而 gravity_aligned_range_data 是经过重力修正后的传感器数据，数据的原点 origin 坐标近似为 (0,0)。
-   * 2. range_data_in_local 是在局部地图坐标系下的扫描数据，包含三个字段，
+   * 2. 这里需要注意，pose_estimate_2d 是优化后的位姿估计，机器人在局部地图坐标系下的位置，只包含位置信息。
+   * 3. gravity_aligned_range_data 是经过重力修正后的传感器数据，从局部地图坐标系平移到机器人坐标系下的扫描数据，但没有经过旋转，
+   *    包含三个字段，其中 origin 近似为 (0,0,0)，而 returns 和 misses 则分别是
+   *    局部地图坐标系下的 hit 点和 miss 点经过平移后在机器人坐标系下的空间坐标，但没有经过旋转。
+   * 4. 所以，计算之后得到的 range_data_in_local 是在局部地图坐标系下的扫描数据，包含三个字段，
    *    其中 origin 是当次扫描测量时机器人在局部地图坐标系的位置，
    *    returns 和 misses 则分别记录了扫描数据的 hit 点和 miss 点在局部地图坐标系下的空间坐标。
    */
   sensor::RangeData range_data_in_local =
       TransformRangeData(gravity_aligned_range_data,
                          transform::Embed3D(pose_estimate_2d->cast<float>()));
-  // 通过函数 InsertIntoSubmap() 将新的扫描数据插入到子图中
+  /**
+   * 1. 通过函数 InsertIntoSubmap() 将新的扫描数据插入到子图中。
+   * 2. range_data_in_local 是在优化之后的位姿估计下观测到的 hit 点和 miss 点在局部地图坐标系下的点云数据，
+   *    包含三个字段，其中 origin 是当次扫描测量时机器人在局部地图坐标系的位置，
+   *    returns 和 misses 则分别记录了 hit 点和 miss 点在局部地图坐标系下的空间坐标。
+   * 3. gravity_aligned_range_data 是扫描匹配之前执行了重力修正的扫描数据，从局部地图坐标系平移到机器人坐标系下的扫描数据，但没有经过旋转，
+   *    包含三个字段，其中 origin 近似为 (0,0,0)，而 returns 和 misses 则分别是
+   *    局部地图坐标系下的 hit 点和 miss 点经过平移后在机器人坐标系下的空间坐标，但没有经过旋转。
+   * 4. pose_estimate 是优化之后的位姿估计，机器人在局部地图坐标系下的位姿，包含位置和方向信息。
+   * 5. gravity_alignment 是重力方向，表示当前机器人在局部地图坐标系下的方向。
+   */
   std::unique_ptr<InsertionResult> insertion_result =
       InsertIntoSubmap(time, range_data_in_local, gravity_aligned_range_data,
                        pose_estimate, gravity_alignment.rotation());
-  // 然后统计数据累积的时间，并返回匹配结果。kLocalSlamLatencyMetric 应该是用来监视延迟的。
+  // 然后统计数据累积的时间。kLocalSlamLatencyMetric 应该是用来监视延迟的。
   auto duration = std::chrono::steady_clock::now() - accumulation_started_;
   kLocalSlamLatencyMetric->Set(
       std::chrono::duration_cast<std::chrono::seconds>(duration).count());
+  // 返回匹配结果。
+  // time 是当前同步时间，
+  // pose_estimate 是优化之后的位姿估计，机器人在局部地图坐标系下的位姿，包含位置和方向信息，
+  // range_data_in_local 是在优化之后的位姿估计下观测到的 hit 点和 miss 点在局部地图坐标系下的点云数据，
+  // insertion_result 是子图插入结果。
   return common::make_unique<MatchingResult>(
       MatchingResult{time, pose_estimate, std::move(range_data_in_local),
                      std::move(insertion_result)});
 }
 
 // 将传感器数据插入到当前正在维护的子图中。
-// 该函数有5个参数。
+// 该函数有5个参数：
 // time 是当前同步时间，
 // range_data_in_local 是在优化之后的位姿估计下观测到的 hit 点和 miss 点在局部地图坐标系下的点云数据，
-// gravity_aligned_range_data 中记录的则是扫描匹配之前执行了重力修正的扫描数据，数据的原点 origin 坐标近似为 (0,0)，
-// pose_estimate 则是优化之后的位姿估计，
-// gravity_alignment 描述了重力方向，translation 近似为 (0,0,0)，rotation 为当前机器人在局部地图坐标系下的方向，
-// 所以只包含机器人在局部地图坐标系下的方向信息。
+// gravity_aligned_range_data 中记录的则是扫描匹配之前执行了重力修正的扫描数据，从局部地图坐标系平移到机器人坐标系下的扫描数据，但没有经过旋转，
+// pose_estimate 则是优化之后的位姿估计，机器人在局部地图坐标系下的位姿，包含位置和方向信息，
+// gravity_alignment 描述了重力方向，表示当前机器人在局部地图坐标系下的方向。
 std::unique_ptr<LocalTrajectoryBuilder2D::InsertionResult>
 LocalTrajectoryBuilder2D::InsertIntoSubmap(
     const common::Time time, const sensor::RangeData& range_data_in_local,
@@ -449,6 +465,8 @@ LocalTrajectoryBuilder2D::InsertIntoSubmap(
   // 在调用 InsertRangeData() 之前，必须在此处完成对 active submaps 的查询，因为查询的值对于下一次插入有效。
   //
   // 在通知对象 active_submaps_ 接收新的数据更新地图之前，先把其维护的子图暂时保存在临时的容器 insertion_submaps 中。
+  // 构图起始阶段，active_submaps_ 维护的子图数量为1。
+  // 随着接收数据更新地图之后，当系统总的子图数量大于1时，active_submaps_ 维护的子图数量会一直维持在2。
   std::vector<std::shared_ptr<const Submap2D>> insertion_submaps;
   for (const std::shared_ptr<Submap2D>& submap : active_submaps_.submaps()) {
     insertion_submaps.push_back(submap);
@@ -466,12 +484,12 @@ LocalTrajectoryBuilder2D::InsertIntoSubmap(
   return common::make_unique<InsertionResult>(InsertionResult{
       std::make_shared<const TrajectoryNode::Data>(TrajectoryNode::Data{
           time,                                  // 当前同步时间
-          gravity_alignment,                     // 重力方向
-          filtered_gravity_aligned_point_cloud,  // 经过滤波和重力修正后的扫描数据
+          gravity_alignment,                     // 重力方向，机器人在局部地图坐标系下的方向
+          filtered_gravity_aligned_point_cloud,  // 经过滤波和重力修正后的扫描数据，从局部地图坐标系平移到机器人坐标系下的扫描数据
           {},  // 'high_resolution_point_cloud' is only used in 3D.
           {},  // 'low_resolution_point_cloud' is only used in 3D.
           {},  // 'rotational_scan_matcher_histogram' is only used in 3D.
-          pose_estimate}),                       // 优化之后的位姿估计
+          pose_estimate}),                       // 优化之后的位姿估计，机器人在局部地图坐标系下的位姿
       std::move(insertion_submaps)});
 }
 

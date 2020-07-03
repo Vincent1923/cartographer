@@ -148,10 +148,11 @@ class LocalTrajectoryBuilder2D {
    * @param range_data_in_local         在优化之后的位姿估计下观测到的 hit 点和 miss 点在局部地图坐标系下的点云数据，类型为 RangeData，
    *                                    包含三个字段，其中 origin 是当次扫描测量时机器人在局部地图坐标系的位置，
    *                                    returns 和 misses 则分别记录了 hit 点和 miss 点在局部地图坐标系下的空间坐标。
-   * @param gravity_aligned_range_data  扫描匹配之前执行了重力修正的扫描数据，数据的原点 origin 坐标近似为 (0,0)。
-   * @param pose_estimate               优化之后的位姿估计
-   * @param gravity_alignment           重力方向，translation 近似为 (0,0,0)，rotation 为当前机器人在局部地图坐标系下的方向，
-   *                                    所以只包含机器人在局部地图坐标系下的方向信息。
+   * @param gravity_aligned_range_data  扫描匹配之前执行了重力修正的扫描数据，从局部地图坐标系平移到机器人坐标系下的扫描数据，但没有经过旋转。
+   *                                    包含三个字段，其中 origin 近似为 (0,0,0)，而 returns 和 misses 则分别是
+   *                                    局部地图坐标系下的 hit 点和 miss 点经过平移后在机器人坐标系下的空间坐标，但没有经过旋转。
+   * @param pose_estimate               优化之后的位姿估计，机器人在局部地图坐标系下的位姿，包含位置和方向信息。
+   * @param gravity_alignment           重力方向，表示当前机器人在局部地图坐标系下的方向。
    * @return                            子图插入结果
    */
   std::unique_ptr<InsertionResult> InsertIntoSubmap(
