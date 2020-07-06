@@ -78,10 +78,24 @@ class GlobalTrajectoryBuilder : public mapping::TrajectoryBuilderInterface {
     // 检查一下前端核心对象是否存在
     CHECK(local_trajectory_builder_)
         << "Cannot add TimedPointCloudData without a LocalTrajectoryBuilder.";
-    // 如果存在就通过它的成员函数 AddRangeData() 完成 Local SLAM 的业务主线。
-    // 如果一切正常，就会返回扫描匹配的结果，在该结果中同时记录了子图的更新信息。
-    // 返回结果通过智能指针 matching_result 记录。
-    // 所以，matching_result 记录了前端 local_trajectory_builder_ 进行扫描匹配的结果。
+    /**
+     * 1. 如果存在就通过它的成员函数 AddRangeData() 完成 Local SLAM 的业务主线。
+     * 2. 如果一切正常，就会返回扫描匹配的结果，在该结果中同时记录了子图的更新信息。
+     *    返回结果通过智能指针 matching_result 记录。
+     * 3. 扫描匹配的结果，为一个指向数据类型 MatchingResult 的智能指针，有4个字段。
+     *    (1) time 是当前同步时间；
+     *    (2) pose_estimate 是优化后机器人在局部地图坐标系下的位姿，包含位置和方向信息；
+     *    (3) range_data_in_local 是在优化之后的位姿估计下观测到的 hit 点和 miss 点在局部地图坐标系下的点云数据，
+     *        包含三个字段，其中 origin 是当次扫描测量时机器人在局部地图坐标系的位置，
+     *        returns 和 misses 则分别记录了 hit 点和 miss 点在局部地图坐标系下的空间坐标。
+     *    (4) insertion_result 是子图插入结果，它是指向类型 InsertionResult 的智能指针，有两个字段。
+     *        constant_data 是插入的节点数据，类型为 TrajectoryNode::Data，这里包含以下4个更新的字段：
+     *          time 是当前同步时间；
+     *          gravity_alignment 是重力方向，机器人在局部地图坐标系下的方向；
+     *          filtered_gravity_aligned_point_cloud 是经过滤波和重力修正后的扫描数据，从局部地图坐标系平移到机器人坐标系下的扫描数据；
+     *          local_pose 为优化后机器人在局部地图坐标系下的位姿，包含位置和方向信息。
+     *        insertion_submaps 是扫描数据所插入的 active_submaps_ 当前维护的子图对象，一般 size = 2。
+     */
     std::unique_ptr<typename LocalTrajectoryBuilder::MatchingResult>
         matching_result = local_trajectory_builder_->AddRangeData(
             sensor_id, timed_point_cloud_data);
@@ -93,12 +107,23 @@ class GlobalTrajectoryBuilder : public mapping::TrajectoryBuilderInterface {
     // 首先控制计数器 kLocalSlamMatchingResults 自增，记录下前端的输出次数。
     kLocalSlamMatchingResults->Increment();
     std::unique_ptr<InsertionResult> insertion_result;
-    // 通过查询扫描匹配结果 matching_result 的字段 insertion_result 判定前端是否成功地将传感器的数据插入到子图中
+    // 通过查询扫描匹配结果 matching_result 的字段 insertion_result 判定前端是否成功地将传感器的数据插入到子图中，
+    // 若是，则通过后端的位姿图接口 AddNode() 创建一个轨迹节点，并把前端的输出结果喂给后端。
+    // 如果一切正常，我们就会得到新建的轨迹节点索引，它被记录在临时对象 node_id 中。
     if (matching_result->insertion_result != nullptr) {
       kLocalSlamInsertionResults->Increment();
-      // 若是，则通过后端的位姿图接口 AddNode() 创建一个轨迹节点，并把前端的输出结果喂给后端。
-      // 如果一切正常，我们就会得到新建的轨迹节点索引，它被记录在临时对象 node_id 中。
-      // 所以，node_id 是后端的位姿图 pose_graph_ 新建的轨迹节点索引。
+      /**
+       * 1. 通过后端的位姿图接口 AddNode() 创建一个轨迹节点，并把前端的输出结果喂给后端，
+       *    最后返回新建的轨迹节点索引 node_id。
+       * 2. 有三个输入参数：
+       *    (1) 第一个参数 constant_data 记录了更新子图时的点云信息以及相对位姿，类型为 TrajectoryNode::Data，这里包含以下4个更新的字段：
+       *        time 是当前同步时间；
+       *        gravity_alignment 是重力方向，机器人在局部地图坐标系下的方向；
+       *        filtered_gravity_aligned_point_cloud 是经过滤波和重力修正后的扫描数据，从局部地图坐标系平移到机器人坐标系下的扫描数据；
+       *        local_pose 为优化后的机器人在局部地图坐标系下的位姿估计，包含位置和方向信息。
+       *    (2) trajectory_id_ 是轨迹索引。
+       *    (3) insertion_submaps 是更新的子图，它是扫描数据所插入的 active_submaps_ 当前维护的子图对象。
+       */ 
       auto node_id = pose_graph_->AddNode(
           matching_result->insertion_result->constant_data, trajectory_id_,
           matching_result->insertion_result->insertion_submaps);

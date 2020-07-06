@@ -53,6 +53,7 @@ PoseGraph2D::PoseGraph2D(
       optimization_problem_(std::move(optimization_problem)),
       constraint_builder_(options_.constraint_builder_options(), thread_pool) {}
 
+// 析构函数
 PoseGraph2D::~PoseGraph2D() {
   WaitForAllComputations();
   common::MutexLocker locker(&mutex_);
@@ -130,50 +131,64 @@ std::vector<SubmapId> PoseGraph2D::InitializeGlobalSubmapPoses(
   return {front_submap_id, last_submap_id};
 }
 
-// constant_data 记录了更新子图时的点云信息以及相对位姿，trajectory_id 记录了轨迹索引，insertion_submaps 则是更新的子图。
+// 创建一个轨迹节点，并把前端的输出结果喂给后端，最后返回新建的轨迹节点索引。
+// 有三个输入参数：
+// constant_data 记录了更新子图时的点云信息以及相对位姿；
+// trajectory_id 记录了轨迹索引；
+// insertion_submaps 则是更新的子图。
 NodeId PoseGraph2D::AddNode(
     std::shared_ptr<const TrajectoryNode::Data> constant_data,
     const int trajectory_id,
     const std::vector<std::shared_ptr<const Submap2D>>& insertion_submaps) {
-  // 将局部位姿转换成为世界坐标系下的位姿。
+  // 在函数一开始先将局部位姿转换成为世界坐标系下的位姿。
   // 函数 GetLocalToGlobalTransform() 根据最新一次优化之后的子图位姿生成局部坐标系到世界坐标系的坐标变换关系。
+  // constant_data->local_pose 是优化后机器人在局部地图坐标系下的位姿估计。
+  // 所以，optimized_pose 是扫描数据插入子图时机器人在世界坐标系下的位姿，即节点在世界坐标系下的位姿。
   const transform::Rigid3d optimized_pose(
       GetLocalToGlobalTransform(trajectory_id) * constant_data->local_pose);
 
-  common::MutexLocker locker(&mutex_);   // 接下来先对信号量加锁，以保证多线程的安全。
-  AddTrajectoryIfNeeded(trajectory_id);  // 通过函数 AddTrajectoryIfNeeded() 来维护各个轨迹之间的连接关系
+  // 接下来先对信号量加锁，以保证多线程的安全。
+  // 并通过函数 AddTrajectoryIfNeeded() 来维护各个轨迹之间的连接关系。
+  common::MutexLocker locker(&mutex_);   
+  AddTrajectoryIfNeeded(trajectory_id);
   // 根据输入的数据和刚刚生成的全局位姿构建一个 TrajectoryNode 的对象，并将之添加到节点的容器 trajectory_nodes_中。
   // 至此我们就添加了一个新的节点，并为之分配了一个 NodeId。
   const NodeId node_id = trajectory_nodes_.Append(
       trajectory_id, TrajectoryNode{constant_data, optimized_pose});
-  ++num_trajectory_nodes_;
+  ++num_trajectory_nodes_;  // 在 "pose_graph_2d.h" 中初始化为0
 
   // Test if the 'insertion_submap.back()' is one we never saw before.
-  // 输入参数 insertion_submaps.back() 中记录了最新的子图。
-  // 先查询一下容器 submap_data_ 中是否有轨迹索引为 trajectory_id 的子图，再判定 insertion_submaps.back() 中的子图是否是新生成的。
+  // 测试 "insertion_submap.back()" 是否是我们从未见过的。
+  //
+  // 我们可以认为输入参数 insertion_submaps.back() 中记录了最新的子图。
+  // 所以下面的条件语句中先查询一下容器 submap_data_ 中是否有轨迹索引为 trajectory_id 的子图，
+  // 再判定 insertion_submaps.back() 中的子图是否是新生成的。
   // 若是则将之添加到容器 submap_data_ 中，同时分配一个 SubmapId。
   if (submap_data_.SizeOfTrajectoryOrZero(trajectory_id) == 0 ||
       std::prev(submap_data_.EndOfTrajectory(trajectory_id))->data.submap !=
           insertion_submaps.back()) {
     // We grow 'submap_data_' as needed. This code assumes that the first
     // time we see a new submap is as 'insertion_submaps.back()'.
-    // 我们根据需要增长"submap_data_"。此代码假定我们第一次看到新的子图为"insertion_submaps.back()"。
+    // 我们根据需要增长 "submap_data_"。此代码假定我们第一次看到新的子图为 "insertion_submaps.back()"。
+    //
     // 分配一个 SubmapId
     const SubmapId submap_id =
         submap_data_.Append(trajectory_id, InternalSubmapData());
-    // 将子图 insertion_submaps.back() 添加到容器 submap_data_ 中
+    // 将新图 insertion_submaps.back() 添加到容器 submap_data_ 中
     submap_data_.at(submap_id).submap = insertion_submaps.back();
   }
 
   // We have to check this here, because it might have changed by the time we
   // execute the lambda.
   // 我们必须在此处进行检查，因为在执行 lambda 时可能已更改。
-  //
-  // 最后通过 lambda 表达式和函数 AddWorkItem() 注册一个为新增节点添加约束的任务 ComputeConstraintsForNode()。
-  // lambda 表达式中[函数对象参数]为[=]，表示函数体内可以使用 Lambda 所在范围内所有可见的局部变量（包括 Lambda 所在类的 this），
-  // 并且是值传递方式（相当于编译器自动为我们按值传递了所有局部变量）。
-  // 根据 Cartographer 的思想，在该任务下应当会将新增的节点与所有已经处于 kFinished 状态的子图进行一次匹配建立可能存在的闭环约束。
-  // 此外，当有新的子图进入 kFinished 状态时，还会将之与所有的节点进行一次匹配。所以这里会通过 insertion_submaps.front() 来查询旧图的更新状态。
+  /**
+   * 1. 最后通过 lambda 表达式和函数 AddWorkItem() 注册一个为新增节点添加约束的任务 ComputeConstraintsForNode()。
+   * 2. 根据 Cartographer 的思想，在该任务下应当会将新增的节点与所有已经处于 kFinished 状态的子图进行一次匹配建立可能存在的闭环约束。
+   *    此外，当有新的子图进入 kFinished 状态时，还会将之与所有的节点进行一次匹配。
+   *    所以这里会通过 insertion_submaps.front() 来查询旧图的更新状态。
+   * 3. 注意：lambda 表达式中的[函数对象参数]为[=]，表示函数体内可以使用 Lambda 所在范围内所有可见的局部变量（包括 Lambda 所在类的 this），
+   *    并且是值传递方式（相当于编译器自动为我们按值传递了所有局部变量）。
+   */ 
   const bool newly_finished_submap = insertion_submaps.front()->finished();
   AddWorkItem([=]() REQUIRES(mutex_) {
     ComputeConstraintsForNode(node_id, insertion_submaps,
@@ -182,14 +197,17 @@ NodeId PoseGraph2D::AddNode(
   return node_id;
 }
 
-// 输入参数就是一个能够兼容上述 lambda 表达式的 void() 类型的可调用对象。
+// 处理一个新的任务。
+// 输入参数是一个能够兼容 lambda 表达式的 void() 类型的可调用对象。
 // 其工作内容也十分简单，如果工作队列(work_queue_)存在就将任务(work_item)放到队列中，如果不存在就直接执行。
 void PoseGraph2D::AddWorkItem(const std::function<void()>& work_item) {
   // 这里的工作队列 work_queue_ 是 PoseGraph2D 的一个成员变量，是一个指向双端队列的智能指针。
-  // 在构造函数中没有创建过这一对象，所以一开始都是 nullptr。
+  // 在 PoseGraph2D 构造函数中没有创建过这一对象，所以一开始都是 nullptr。
   if (work_queue_ == nullptr) {
+    // 若工作队列 work_queue_ 不存在，则直接执行任务 work_item
     work_item();
   } else {
+    // 若工作队列 work_queue_ 存在，则把将任务 work_item 放到队列中
     work_queue_->push_back(work_item);
   }
 }
@@ -655,14 +673,20 @@ void PoseGraph2D::AddSerializedConstraints(
   });
 }
 
+// 添加修饰器。
+// 其输入参数就是一个指向修饰器对象的智能指针。
 void PoseGraph2D::AddTrimmer(std::unique_ptr<PoseGraphTrimmer> trimmer) {
   common::MutexLocker locker(&mutex_);
   // C++11 does not allow us to move a unique_ptr into a lambda.
   PoseGraphTrimmer* const trimmer_ptr = trimmer.release();
-  // 这里的 lambda 表达式描述的是一个 void() 类型的函数，它没有返回值也没有参数列表。
-  // [capture list] 中获取的是在函数体中用到的一些变量。捕获 this 指针，是为了能够访问成员变量 trimmers_，
-  // 而 trimmer_ptr 则是从输入参数中获取的修饰器对象指针。这个表达式的作用就是将传参的修饰器指针放入容器 trimmers_ 中。
-  // 但是 lambda 表达式并不会立即执行，它将被当做一个类似于函数指针或者仿函数这样的可执行对象传参给函数 AddWorkItem，在合适的条件下被调用。
+  /**
+   * 1. 通过函数 AddWorkItem() 将一个 lambda 表达式添加到工作队列中。
+   * 2. 这里的 lambda 表达式描述的是一个 void() 类型的函数，它没有返回值也没有参数列表。
+   *    [capture list] 中获取的是在函数体中用到的一些变量。捕获 this 指针，是为了能够访问成员变量 trimmers_，
+   *    而 trimmer_ptr 则是从输入参数中获取的修饰器对象指针。这个表达式的作用就是将传参的修饰器指针放入容器 trimmers_ 中。
+   * 3. 但是 lambda 表达式并不会立即执行，它将被当做一个类似于函数指针或者仿函数这样的可执行对象
+   *    传参给函数 AddWorkItem，在合适的条件下被调用。
+   */ 
   AddWorkItem([this, trimmer_ptr]()
                   REQUIRES(mutex_) { trimmers_.emplace_back(trimmer_ptr); });
 }
@@ -846,7 +870,11 @@ std::vector<PoseGraphInterface::Constraint> PoseGraph2D::constraints() const {
 }
 
 // 指定新的运动轨迹的起始位姿。
-// from_trajectory_id 是新轨迹的索引。剩下三个参数不是很理解，看字面意思是 time 时刻新轨迹起点相对于参考轨迹(to_trajectory_id)的位姿(pose)。
+// 有四个输入参数：
+// from_trajectory_id 是新轨迹的索引；
+// to_trajectory_id 是参考轨迹的索引；
+// pose 是新轨迹(from_trajectory_id)起点相对于参考轨迹(to_trajectory_id)的位姿；
+// time 是添加新轨迹的时刻。
 void PoseGraph2D::SetInitialTrajectoryPose(const int from_trajectory_id,
                                            const int to_trajectory_id,
                                            const transform::Rigid3d& pose,

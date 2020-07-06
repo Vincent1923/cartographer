@@ -61,14 +61,22 @@ namespace mapping {
 // 它被扩展用于构建子图：
 // 每个节点已经针对一个或多个子图进行了匹配（为每个匹配添加了约束），节点和子图的位姿都将得到优化。
 // 所有约束都在子图i和节点j之间。
+/**
+ * @brief PoseGraph2D           构造函数。函数体是空的什么也没有做，只是在构造列表中完成了一些成员变量构造。
+ * @param options               从配置文件中装载的关于位姿图的配置项
+ * @param optimization_problem  指向后端优化问题求解器的智能指针
+ * @param thread_pool           线程池
+ */
 class PoseGraph2D : public PoseGraph {
  public:
   PoseGraph2D(
       const proto::PoseGraphOptions& options,
       std::unique_ptr<optimization::OptimizationProblem2D> optimization_problem,
       common::ThreadPool* thread_pool);
+  // 析构函数
   ~PoseGraph2D() override;
 
+  // 为了防止一些意外的情况发生，该类屏蔽了拷贝构造函数和拷贝赋值运算符。
   PoseGraph2D(const PoseGraph2D&) = delete;
   PoseGraph2D& operator=(const PoseGraph2D&) = delete;
 
@@ -78,8 +86,19 @@ class PoseGraph2D : public PoseGraph {
   // 'insertion_submaps.front().finished()' is 'true', data was inserted into
   // this submap for the last time.
   //
-  // 用“constant_data”添加一个新节点。通过与“insertion_submaps.front()”进行扫描匹配来确定其“constant_data->local_pose”，
-  // 并将节点数据插入到“insertion_submaps”中。如果“insertion_submaps.front().finished()”为“true”，则数据是最后一次插入该子图中。
+  // 用 "constant_data" 添加一个新节点。通过与 "insertion_submaps.front()" 进行扫描匹配来确定其 "constant_data->local_pose"，
+  // 并将节点数据插入到 "insertion_submaps" 中。如果 "insertion_submaps.front().finished()" 为 "true"，则数据是最后一次插入该子图中。
+  /**
+   * @brief AddNode            创建一个轨迹节点，并把前端的输出结果喂给后端，最后返回新建的轨迹节点索引。
+   * @param constant_data      记录了更新子图时的点云信息以及相对位姿，类型为 TrajectoryNode::Data，这里包含以下4个更新的字段：
+   *                           time 是当前同步时间；
+   *                           gravity_alignment 是重力方向，机器人在局部地图坐标系下的方向；
+   *                           filtered_gravity_aligned_point_cloud 是经过滤波和重力修正后的扫描数据，从局部地图坐标系平移到机器人坐标系下的扫描数据；
+   *                           local_pose 为优化后的机器人在局部地图坐标系下的位姿估计，包含位置和方向信息。
+   * @param trajectory_id      轨迹索引
+   * @param insertion_submaps  更新的子图，它是扫描数据所插入的 active_submaps_ 当前维护的子图对象
+   * @return                   新建的轨迹节点索引，类型 NodeId 包含 trajectory_id 和 node_index
+   */
   NodeId AddNode(
       std::shared_ptr<const TrajectoryNode::Data> constant_data,
       int trajectory_id,
@@ -112,6 +131,10 @@ class PoseGraph2D : public PoseGraph {
                        const SubmapId& submap_id) override;
   void AddSerializedConstraints(
       const std::vector<Constraint>& constraints) override;
+  /**
+   * @brief AddTrimmer  添加修饰器
+   * @param trimmer     一个指向修饰器对象的智能指针
+   */
   void AddTrimmer(std::unique_ptr<PoseGraphTrimmer> trimmer) override;
   void RunFinalOptimization() override;
   std::vector<std::vector<int>> GetConnectedTrajectories() const override;
@@ -143,6 +166,13 @@ class PoseGraph2D : public PoseGraph {
   std::map<int, TrajectoryData> GetTrajectoryData() const override
       EXCLUDES(mutex_);
   std::vector<Constraint> constraints() const override EXCLUDES(mutex_);
+  /**
+   * @brief SetInitialTrajectoryPose  指定新的运动轨迹的起始位姿
+   * @param from_trajectory_id        新轨迹的索引
+   * @param to_trajectory_id          参考轨迹的索引
+   * @param pose                      新轨迹(from_trajectory_id)起点相对于参考轨迹(to_trajectory_id)的位姿
+   * @param time                      添加新轨迹的时刻
+   */
   void SetInitialTrajectoryPose(int from_trajectory_id, int to_trajectory_id,
                                 const transform::Rigid3d& pose,
                                 const common::Time time) override
@@ -190,6 +220,12 @@ class PoseGraph2D : public PoseGraph {
       const REQUIRES(mutex_);
 
   // Handles a new work item.
+  // 处理一个新的任务。
+  /**
+   * @brief AddWorkItem  处理一个新的任务。
+   *                     如果工作队列(work_queue_)存在就将任务(work_item)放到队列中，如果不存在就直接执行。
+   * @param work_item    新的任务项，输入参数是一个能够兼容 lambda 表达式的 void() 类型的可调用对象。
+   */
   void AddWorkItem(const std::function<void()>& work_item) REQUIRES(mutex_);
 
   // Adds connectivity and sampler for a trajectory if it does not exist.
