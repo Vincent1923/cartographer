@@ -432,17 +432,28 @@ LocalTrajectoryBuilder2D::AddAccumulatedRangeData(
   auto duration = std::chrono::steady_clock::now() - accumulation_started_;
   kLocalSlamLatencyMetric->Set(
       std::chrono::duration_cast<std::chrono::seconds>(duration).count());
-  // 返回匹配结果。
-  // time 是当前同步时间，
-  // pose_estimate 是优化之后的位姿估计，机器人在局部地图坐标系下的位姿，包含位置和方向信息，
-  // range_data_in_local 是在优化之后的位姿估计下观测到的 hit 点和 miss 点在局部地图坐标系下的点云数据，
-  // insertion_result 是子图插入结果。
+  /**
+   *  
+   * 1. 返回匹配结果，为一个指向数据类型 MatchingResult 的智能指针，有4个字段。
+   * 2. time 是当前同步时间；
+   * 3. pose_estimate 是优化后机器人在局部地图坐标系下的位姿，包含位置和方向信息；
+   * 4. range_data_in_local 是在优化之后的位姿估计下观测到的 hit 点和 miss 点在局部地图坐标系下的点云数据，
+   *    包含三个字段，其中 origin 是当次扫描测量时机器人在局部地图坐标系的位置，
+   *    returns 和 misses 则分别记录了 hit 点和 miss 点在局部地图坐标系下的空间坐标。
+   * 5. insertion_result 是子图插入结果，它是指向类型 InsertionResult 的智能指针，有两个字段。
+   *    (1) constant_data 是插入的节点数据，类型为 TrajectoryNode::Data，这里包含以下4个更新的字段：
+   *        time 是当前同步时间；
+   *        gravity_alignment 是重力方向，机器人在局部地图坐标系下的方向；
+   *        filtered_gravity_aligned_point_cloud 是经过滤波和重力修正后的扫描数据，从局部地图坐标系平移到机器人坐标系下的扫描数据；
+   *        local_pose 为优化后机器人在局部地图坐标系下的位姿，包含位置和方向信息。
+   *    (2) insertion_submaps 是扫描数据所插入的 active_submaps_ 当前维护的子图对象，一般 size = 2。
+   */
   return common::make_unique<MatchingResult>(
       MatchingResult{time, pose_estimate, std::move(range_data_in_local),
                      std::move(insertion_result)});
 }
 
-// 将传感器数据插入到当前正在维护的子图中。
+// 将传感器数据插入到当前正在维护的子图中，并返回插入结果。
 // 该函数有5个参数：
 // time 是当前同步时间，
 // range_data_in_local 是在优化之后的位姿估计下观测到的 hit 点和 miss 点在局部地图坐标系下的点云数据，
@@ -489,8 +500,8 @@ LocalTrajectoryBuilder2D::InsertIntoSubmap(
           {},  // 'high_resolution_point_cloud' is only used in 3D.
           {},  // 'low_resolution_point_cloud' is only used in 3D.
           {},  // 'rotational_scan_matcher_histogram' is only used in 3D.
-          pose_estimate}),                       // 优化之后的位姿估计，机器人在局部地图坐标系下的位姿
-      std::move(insertion_submaps)});
+          pose_estimate}),                       // 优化之后的位姿估计，机器人在局部地图坐标系下的位姿，包含位置和方向信息
+      std::move(insertion_submaps)});            // 扫描数据所插入的 active_submaps_ 当前维护的子图对象
 }
 
 // 接收 IMU 数据，并完成位姿估计器 extrapolator_ 的初始化工作

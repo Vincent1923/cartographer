@@ -52,7 +52,7 @@ class LocalTrajectoryBuilder2D {
   // matching 结果。包括时间、匹配的 local_pose、传感器数据、插入结果等
   struct MatchingResult {
     common::Time time;                      // 扫描匹配发生的时间
-    transform::Rigid3d local_pose;          // 在局部地图坐标系下的位姿
+    transform::Rigid3d local_pose;          // 优化后机器人在局部地图坐标系下的位姿，包含位置和方向信息
     sensor::RangeData range_data_in_local;  // 在局部地图坐标系下的扫描数据
     // 'nullptr' if dropped by the motion filter.
     // 如果扫描匹配的结果被运动滤波器过滤了，那么字段 insertion_result 中记录的是一个空指针 "nullptr"。
@@ -92,7 +92,19 @@ class LocalTrajectoryBuilder2D {
    * @param range_data    机器人坐标系下未经时间同步的扫描数据，它应该是从 ROS 系统中转换过来的。
    *                      类型 TimedPointCloudData 包含三个字段，其中 time 是获取最后一个扫描点的时间，
    *                      origin 是当次扫描测量时传感器在机器人坐标系下的位置，而 ranges 则是扫描数据在机器人坐标系下的空间坐标。
-   * @return              扫描匹配的结果
+   * @return              扫描匹配的结果，为一个指向数据类型 MatchingResult 的智能指针，有4个字段。
+   *                      (1) time 是当前同步时间；
+   *                      (2) pose_estimate 是优化后机器人在局部地图坐标系下的位姿，包含位置和方向信息；
+   *                      (3) range_data_in_local 是在优化之后的位姿估计下观测到的 hit 点和 miss 点在局部地图坐标系下的点云数据，
+   *                          包含三个字段，其中 origin 是当次扫描测量时机器人在局部地图坐标系的位置，
+   *                          returns 和 misses 则分别记录了 hit 点和 miss 点在局部地图坐标系下的空间坐标。
+   *                      (4) insertion_result 是子图插入结果，它是指向类型 InsertionResult 的智能指针，有两个字段。
+   *                          constant_data 是插入的节点数据，类型为 TrajectoryNode::Data，这里包含以下4个更新的字段：
+   *                            time 是当前同步时间；
+   *                            gravity_alignment 是重力方向，机器人在局部地图坐标系下的方向；
+   *                            filtered_gravity_aligned_point_cloud 是经过滤波和重力修正后的扫描数据，从局部地图坐标系平移到机器人坐标系下的扫描数据；
+   *                            local_pose 为优化后机器人在局部地图坐标系下的位姿，包含位置和方向信息。
+   *                          insertion_submaps 是扫描数据所插入的 active_submaps_ 当前维护的子图对象，一般 size = 2。
    */
   std::unique_ptr<MatchingResult> AddRangeData(
       const std::string& sensor_id,
@@ -120,7 +132,19 @@ class LocalTrajectoryBuilder2D {
    *                                    局部地图坐标系下的 hit 点和 miss 点经过平移后在机器人坐标系下的空间坐标，但没有经过旋转。
    * @param gravity_alignment           重力方向，translation 近似为 (0,0,0)，rotation 为当前机器人在局部地图坐标系下的方向，
    *                                    所以只包含机器人在局部地图坐标系下的方向信息。
-   * @return                            扫描匹配的结果
+   * @return                            扫描匹配的结果，为一个指向数据类型 MatchingResult 的智能指针，有4个字段。
+   *                                    (1) time 是当前同步时间；
+   *                                    (2) pose_estimate 是优化后机器人在局部地图坐标系下的位姿，包含位置和方向信息；
+   *                                    (3) range_data_in_local 是在优化之后的位姿估计下观测到的 hit 点和 miss 点在局部地图坐标系下的点云数据，
+   *                                    包含三个字段，其中 origin 是当次扫描测量时机器人在局部地图坐标系的位置，
+   *                                    returns 和 misses 则分别记录了 hit 点和 miss 点在局部地图坐标系下的空间坐标。
+   *                                    (4) insertion_result 是子图插入结果，它是指向类型 InsertionResult 的智能指针，有两个字段。
+   *                                        constant_data 是插入的节点数据，类型为 TrajectoryNode::Data，这里包含以下4个更新的字段：
+   *                                          time 是当前同步时间；
+   *                                          gravity_alignment 是重力方向，机器人在局部地图坐标系下的方向；
+   *                                          filtered_gravity_aligned_point_cloud 是经过滤波和重力修正后的扫描数据，从局部地图坐标系平移到机器人坐标系下的扫描数据；
+   *                                          local_pose 为优化后机器人在局部地图坐标系下的位姿，包含位置和方向信息。
+   *                                        insertion_submaps 是扫描数据所插入的 active_submaps_ 当前维护的子图对象，一般 size = 2。
    */
   std::unique_ptr<MatchingResult> AddAccumulatedRangeData(
       common::Time time, const sensor::RangeData& gravity_aligned_range_data,
@@ -153,7 +177,13 @@ class LocalTrajectoryBuilder2D {
    *                                    局部地图坐标系下的 hit 点和 miss 点经过平移后在机器人坐标系下的空间坐标，但没有经过旋转。
    * @param pose_estimate               优化之后的位姿估计，机器人在局部地图坐标系下的位姿，包含位置和方向信息。
    * @param gravity_alignment           重力方向，表示当前机器人在局部地图坐标系下的方向。
-   * @return                            子图插入结果
+   * @return                            子图插入结果，它是指向类型 InsertionResult 的智能指针，有两个字段。
+   *                                    (1) constant_data 是插入的节点数据，类型为 TrajectoryNode::Data，这里包含以下4个更新的字段：
+   *                                          time 是当前同步时间；
+   *                                          gravity_alignment 是重力方向，机器人在局部地图坐标系下的方向；
+   *                                          filtered_gravity_aligned_point_cloud 是经过滤波和重力修正后的扫描数据，从局部地图坐标系平移到机器人坐标系下的扫描数据；
+   *                                          local_pose 为优化后机器人在局部地图坐标系下的位姿，包含位置和方向信息。
+   *                                    (2) insertion_submaps 是扫描数据所插入的 active_submaps_ 当前维护的子图对象，一般 size = 2。
    */
   std::unique_ptr<InsertionResult> InsertIntoSubmap(
       common::Time time, const sensor::RangeData& range_data_in_local,
