@@ -46,7 +46,7 @@ namespace constraints {
 
 // Returns (map <- submap) where 'submap' is a coordinate system at the origin
 // of the Submap.
-// 返回(map <- submap)，其中"submap"是子图原点的坐标系。
+// 返回(map <- submap)，其中 "submap" 是子图原点的坐标系。
 transform::Rigid2d ComputeSubmapPose(const Submap2D& submap);
 
 // Asynchronously computes constraints.
@@ -56,21 +56,34 @@ transform::Rigid2d ComputeSubmapPose(const Submap2D& submap);
 // 'MaybeAddGlobalConstraint', and 'NotifyEndOfNode', then call 'WhenDone' once.
 // After all computations are done the 'callback' will be called with the result
 // and another MaybeAdd(Global)Constraint()/WhenDone() cycle can follow.
+// 混合任意数量的对 "MaybeAddConstraint"，"MaybeAddGlobalConstraint" 和 "NotifyEndOfNode" 的调用，
+// 然后一次调用 "WhenDone"。完成所有计算后，将使用计算结果调用回调 "callback"，然后可以执行另一个
+// MaybeAdd(Global)Constraint()/WhenDone() 循环。
 //
 // This class is thread-safe.
+// 此类是线程安全的。
 //
-// 在任意调用 MaybeAddConstraint、MaybeAddGlobalConstraint、NotifyEndOfNode 之后，调用一次 WhenDone 接口，
-// 来注册回调函数结束一轮操作。如此不断的重复这个过程就可以持续地进行闭环检测，添加必要的约束。
+// Cartographer 使用一个叫做 ConstraintBuilder2D 的类来进行闭环检测并构建约束。
+// 根据它的注释，可以看出它主要是异步地计算约束。
+// 我们可以在任意调用 MaybeAddConstraint、MaybeAddGlobalConstraint、NotifyEndOfNode 之后，
+// 调用一次 WhenDone 接口，来注册回调函数结束一轮操作。
+// 如此不断的重复这个过程就可以持续地进行闭环检测，添加必要的约束。
 class ConstraintBuilder2D {
  public:
   using Constraint = PoseGraphInterface::Constraint;
   using Result = std::vector<Constraint>;
 
+  /**
+   * @brief ConstraintBuilder2D  构造函数
+   * @param options              约束构建器的配置项。
+   *                             这个配置项 options 早在 Cartographer 的 ROS 入口中就已经从配置文件中加载了。
+   * @param thread_pool          线程池。线程池对象 thread_pool 指向地图构建器对象 map_builder 的一个成员变量。
+   */
   ConstraintBuilder2D(const proto::ConstraintBuilderOptions& options,
                       common::ThreadPoolInterface* thread_pool);
   ~ConstraintBuilder2D();
 
-  // 类 ConstraintBuilder2D 屏蔽了拷贝构造函数和拷贝赋值操作符。
+  // 屏蔽了拷贝构造函数和拷贝赋值操作符
   ConstraintBuilder2D(const ConstraintBuilder2D&) = delete;
   ConstraintBuilder2D& operator=(const ConstraintBuilder2D&) = delete;
 
@@ -138,6 +151,7 @@ class ConstraintBuilder2D {
 
   void RunWhenDoneCallback() EXCLUDES(mutex_);
 
+/****************************************** 成员变量 ******************************************/
   const constraints::proto::ConstraintBuilderOptions options_;  // 关于约束构建器的各种配置
   common::ThreadPoolInterface* thread_pool_;  // 线程池，用于并行地完成闭环检测
   common::Mutex mutex_;  // 保护公共资源的互斥量
@@ -162,6 +176,8 @@ class ConstraintBuilder2D {
   // Constraints currently being computed in the background. A deque is used to
   // keep pointers valid when adding more entries. Constraint search results
   // with below-threshold scores are also 'nullptr'.
+  // 当前在后台计算的约束。当添加更多条目时，使用双端队列使指针保持有效。低于阈值分数的约束搜索结果也为 "nullptr"。
+  //
   // 用于保存后台计算的约束的双端队列
   std::deque<std::unique_ptr<Constraint>> constraints_ GUARDED_BY(mutex_);
 
@@ -171,7 +187,7 @@ class ConstraintBuilder2D {
       GUARDED_BY(mutex_);
 
   common::FixedRatioSampler sampler_;  // 采样器
-  scan_matching::CeresScanMatcher2D ceres_scan_matcher_;  // 基于Ceres库的扫描匹配器
+  scan_matching::CeresScanMatcher2D ceres_scan_matcher_;  // 基于 Ceres 库的扫描匹配器
 
   // Histogram of scan matcher scores.
   // 扫描匹配得分的直方图
