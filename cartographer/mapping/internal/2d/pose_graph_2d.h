@@ -239,6 +239,13 @@ class PoseGraph2D : public PoseGraph {
       REQUIRES(mutex_);
 
   // Adds constraints for a node, and starts scan matching in the background.
+  // 为节点添加约束，并在后台开始扫描匹配。
+  /**
+   * @brief ComputeConstraintsForNode  为新增节点添加约束，还会触发工作队列的构建和运行。
+   * @param node_id                    待更新的节点索引
+   * @param insertion_submaps          从 Local SLAM 一路传递过来的新旧子图
+   * @param newly_finished_submap      表示旧图是否结束更新了
+   */
   void ComputeConstraintsForNode(
       const NodeId& node_id,
       std::vector<std::shared_ptr<const Submap2D>> insertion_submaps,
@@ -253,6 +260,11 @@ class PoseGraph2D : public PoseGraph {
       REQUIRES(mutex_);
 
   // Runs the optimization, executes the trimmers and processes the work queue.
+  // 运行优化，执行修饰器并处理工作队列。
+  /**
+   * @brief HandleWorkQueue  运行优化，执行修饰器并处理工作队列
+   * @param result           由约束构建器 ConstraintBuilder2D 建立起来的约束向量
+   */
   void HandleWorkQueue(const constraints::ConstraintBuilder2D::Result& result)
       REQUIRES(mutex_);
 
@@ -309,6 +321,10 @@ class PoseGraph2D : public PoseGraph {
   bool run_loop_closure_ GUARDED_BY(mutex_) = false;
 
   // Schedules optimization (i.e. loop closure) to run.
+  // 调度优化（即闭环检测）运行。
+  /**
+   * @brief DispatchOptimization  调度优化（即闭环检测）运行
+   */
   void DispatchOptimization() REQUIRES(mutex_);
 
   // Current optimization problem.
