@@ -79,20 +79,23 @@ ConstraintBuilder2D::~ConstraintBuilder2D() {
   CHECK(when_done_ == nullptr);
 }
 
-// 接口 MaybeAddConstraint 用于检查子图和路径节点之间是否存在可能的约束。它有5个输入参数：
-// submap_id 和 node_id 分别是子图和路径节点的索引。
+// 接口 MaybeAddConstraint 用于检查子图和路径节点之间是否存在可能的约束。
+// 它有5个输入参数：
+// submap_id 和 node_id 分别是子图和路径节点的索引；
 // 指针 submap 和 constant_data 分别指向了考察的子图对象和路径节点中记录了激光点云数据，
-// 需要注意的是这两个对象的生命周期应当能够覆盖后端优化的计算过程。
+// 需要注意的是这两个对象的生命周期应当能够覆盖后端优化的计算过程；
 // initial_relative_pose 记录了路径节点相对于子图的初始位姿，提供了优化迭代的一个初值。
 void ConstraintBuilder2D::MaybeAddConstraint(
     const SubmapId& submap_id, const Submap2D* const submap,
     const NodeId& node_id, const TrajectoryNode::Data* const constant_data,
     const transform::Rigid2d& initial_relative_pose) {
-  // 如果初始的相对位姿显示，路径节点与子图相差很远，就直接返回不再两者之间建立约束。
-  // 这个距离阈值可以通过配置项 max_constraint_distance 来设定。
-  // 这样做有两个好处，其一可以一定程度上降低约束的数量，减少全局图优化的计算量，提高系统的运行效率; 
-  // 其二，如果两者相差太远，很可能会受到累积误差的影响，导致添加错误的约束，给最终的全局优化带来负面的影响，
-  // 这样直接抛弃一些不太合理的约束，看似遗漏了很多信息，但对于优化结果而言可能是一件好事。
+  /**
+   * 1. 如果初始的相对位姿显示，路径节点与子图相差很远，就直接返回不再两者之间建立约束。
+   *    这个距离阈值可以通过配置项 max_constraint_distance 来设定。
+   * 2. 这样做有两个好处，其一可以一定程度上降低约束的数量，减少全局图优化的计算量，提高系统的运行效率；
+   *    其二，如果两者相差太远，很可能会受到累积误差的影响，导致添加错误的约束，给最终的全局优化带来负面的影响，
+   *    这样直接抛弃一些不太合理的约束，看似遗漏了很多信息，但对于优化结果而言可能是一件好事。
+   */  
   if (initial_relative_pose.translation().norm() >
       options_.max_constraint_distance()) {
     return;
@@ -100,17 +103,20 @@ void ConstraintBuilder2D::MaybeAddConstraint(
   // 如果采样器暂停了，也将直接退出。我目前还不是很清楚这个采样器是干什么用的。
   if (!sampler_.Pulse()) return;
 
-  // 通过互斥量对象 mutex_ 加锁。然后检查回调函数对象 when_done_ 是否存在，若存在则说明上一个闭环检测迭代还没有完全结束，所以通过日志报警。
+  // 通过互斥量对象 mutex_ 加锁。
+  // 然后检查回调函数对象 when_done_ 是否存在，若存在则说明上一个闭环检测迭代还没有完全结束，所以通过日志报警。
   common::MutexLocker locker(&mutex_);
   if (when_done_) {
     LOG(WARNING)
         << "MaybeAddConstraint was called while WhenDone was scheduled.";
   }
-  // 向容器 constraints_ 中添加新的约束。
+  // 然后就向容器 constraints_ 中添加新的约束。至于那个 kQueueLengthMetric 我们暂时先不去管它。
   constraints_.emplace_back();
   kQueueLengthMetric->Set(constraints_.size());
+  // constraint 是常量指针，必须初始化，而且一旦初始化完成，则它的值（也就是存放在指针中的那个地址）就不能再改变了。
+  // constraint 是一个指向智能指针(std::unique_ptr<Constraint>)的常量指针。
   auto* const constraint = &constraints_.back();
-  // 通过函数 DispatchScanMatcherConstruction 构建了一个扫描匹配器，一会儿我们就会看到，
+  // 接着通过函数 DispatchScanMatcherConstruction() 构建了一个扫描匹配器，一会儿我们就会看到，
   // 这个函数并没有完成扫描匹配器的构建，而是通过 lambda 表达式和线程池推后实现的。
   const auto* scan_matcher =
       DispatchScanMatcherConstruction(submap_id, submap->grid());
@@ -124,17 +130,21 @@ void ConstraintBuilder2D::MaybeAddConstraint(
   });
   // 由于具体的约束计算过程需要用到刚刚构建的扫描匹配器对象 scan_matcher，而该对象的核心也是在线程池中的一个 Task 完成构建的。
   // 所以这里通过给 Task 添加依赖关系来保证，在进行约束计算之前扫描匹配器就已经完成构建和初始化了。
+  // 这里注意，constraint_task 是类型为 common::Task 的智能指针，
+  // 而 scan_matcher->creation_task_handle 则是线程池任务句柄，类型为 std::weak_ptr<common::Task>。
   constraint_task->AddDependency(scan_matcher->creation_task_handle);
-  // 最后将计算约束的任务添加到线程池的调度队列中，并将其设置为完成轨迹节点约束计算任务的依赖，
+  // 最后将计算约束的任务 constraint_task 添加到线程池的调度队列中，并将其设置为完成轨迹节点约束计算任务的依赖，
   // 保证在完成了所有计算约束的任务之后才会执行 constraint_task 的计算任务。
   auto constraint_task_handle =
       thread_pool_->Schedule(std::move(constraint_task));
+  // finish_node_task_ 是类型为 common::Task 的智能指针，
+  // 而 constraint_task_handle 则是线程池任务句柄，类型为 std::weak_ptr<common::Task>。
   finish_node_task_->AddDependency(constraint_task_handle);
 }
 
-// 接口 MaybeAddGlobalConstraint 的功能类似，也是计算子图和路径节点之间是否存在可能的约束。
+// 接口 MaybeAddGlobalConstraint() 与 MaybeAddConstraint() 的功能类似，也是计算子图和路径节点之间是否存在可能的约束。
 // 所不同的是，该接口只有四个输入参数，没有提供初始相对位姿，而且它的扫描匹配是在整个子图上进行的。
-// 该接口与 MaybeAddConstraint 的套路基本一样。
+// 该接口与 MaybeAddConstraint() 的套路基本一样。
 void ConstraintBuilder2D::MaybeAddGlobalConstraint(
     const SubmapId& submap_id, const Submap2D* const submap,
     const NodeId& node_id, const TrajectoryNode::Data* const constant_data) {
@@ -166,22 +176,26 @@ void ConstraintBuilder2D::MaybeAddGlobalConstraint(
 void ConstraintBuilder2D::NotifyEndOfNode() {
   common::MutexLocker locker(&mutex_);
   CHECK(finish_node_task_ != nullptr);
-  // 以下的 lambda 表达式，可以看到当完成了轨迹节点的约束计算后，就会增加计数器
-  // num_finished_nodes_ 的计数，标识着一个新的路径节点被添加到后端。
+  // 以下的 lambda 表达式，可以看到当完成了轨迹节点的约束计算后，就会增加计数器 num_finished_nodes_ 的计数，
+  // 标识着一个新的路径节点被添加到后端。
+  // finish_node_task_ 是类型为 common::Task 的智能指针。
   finish_node_task_->SetWorkItem([this] {
     common::MutexLocker locker(&mutex_);
     ++num_finished_nodes_;
   });
-  // 通过线程池的 Schedule 接口，将任务对象 finish_node_task_ 添加到线程池的调度队列中
+  // 通过线程池的 Schedule 接口，将任务对象 finish_node_task_ 添加到线程池的调度队列中。
   auto finish_node_task_handle =
       thread_pool_->Schedule(std::move(finish_node_task_));
-  // 重新构建一个 finish_node_task_ 对象
+  // 重新构建一个任务状态机对象 finish_node_task_ 
   finish_node_task_ = common::make_unique<common::Task>();
-  // 将该对象添加到 WhenDone 任务的依赖列表中
+  // 将该对象添加到 WhenDone 任务的依赖列表中。
+  // when_done_task_ 是类型为 common::Task 的智能指针，
+  // 而 finish_node_task_handle 是线程池任务句柄，类型为 std::weak_ptr<common::Task>。
   when_done_task_->AddDependency(finish_node_task_handle);
   ++num_started_nodes_;  // 控制计数器 num_started_nodes_ 自加
 }
 
+// 函数的作用是当所有的闭环检测任务计算完成之后，注册要调用的回调函数。
 // 该函数只有一个输入参数，记录了当所有的闭环检测任务结束之后的回调函数。
 void ConstraintBuilder2D::WhenDone(
     const std::function<void(const ConstraintBuilder2D::Result&)>& callback) {
@@ -192,11 +206,12 @@ void ConstraintBuilder2D::WhenDone(
   when_done_ =
       common::make_unique<std::function<void(const Result&)>>(callback);
   CHECK(when_done_task_ != nullptr);
-  // 指定 when_done_task_ 的具体工作内容，调用函数 RunWhenDoneCallback
+  // 指定 when_done_task_ 的具体工作内容，调用函数 RunWhenDoneCallback()。
+  // when_done_task_ 是类型为 common::Task 的智能指针。
   when_done_task_->SetWorkItem([this] { RunWhenDoneCallback(); });
   // 将 when_done_task_ 添加到线程池的调度队列中
   thread_pool_->Schedule(std::move(when_done_task_));
-  // 新建一个任务状态机对象
+  // 重新构建一个任务状态机对象 when_done_task_
   when_done_task_ = common::make_unique<common::Task>();
 }
 

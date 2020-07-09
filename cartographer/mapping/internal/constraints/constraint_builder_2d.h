@@ -90,9 +90,25 @@ class ConstraintBuilder2D {
   // Schedules exploring a new constraint between 'submap' identified by
   // 'submap_id', and the 'compressed_point_cloud' for 'node_id'. The
   // 'initial_relative_pose' is relative to the 'submap'.
+  // 计划探索在由 "submap_id" 标识的 "submap" 和由 "node_id" 标识的 "compressed_point_cloud" 之间的新约束。
+  // "initial_relative_pose" 是相对于 "submap" 的位姿。
   //
   // The pointees of 'submap' and 'compressed_point_cloud' must stay valid until
   // all computations are finished.
+  // "submap" 和 "compressed_point_cloud" 的指针必须在所有计算完成之前保持有效。
+  /**
+   * @brief MaybeAddConstraint     计算子图和路径节点之间是否存在可能的约束。
+   * @param submap_id              子图的索引
+   * @param submap                 指向考察的子图对象，这个对象的生命周期应当能够覆盖后端优化的计算过程。
+   * @param node_id                路径节点的索引
+   * @param constant_data          指向路径节点中记录的激光点云数据，这个对象的生命周期应当能够覆盖后端优化的计算过程。
+   *                               这里包含以下4个更新的字段：
+   *                               time 是当前同步时间；
+   *                               gravity_alignment 是重力方向，机器人在局部地图坐标系下的方向；
+   *                               filtered_gravity_aligned_point_cloud 是经过滤波和重力修正后的扫描数据，从局部地图坐标系平移到机器人坐标系下的扫描数据；
+   *                               local_pose 为优化后的机器人在局部地图坐标系下的位姿估计，包含位置和方向信息。
+   * @param initial_relative_pose  记录了路径节点相对于子图的初始位姿，提供了优化迭代的一个初值。
+   */
   void MaybeAddConstraint(const SubmapId& submap_id, const Submap2D* submap,
                           const NodeId& node_id,
                           const TrajectoryNode::Data* const constant_data,
@@ -104,16 +120,39 @@ class ConstraintBuilder2D {
   //
   // The pointees of 'submap' and 'compressed_point_cloud' must stay valid until
   // all computations are finished.
+  /**
+   * @brief MaybeAddGlobalConstraint  计算子图和路径节点之间是否存在可能的约束。与 MaybeAddConstraint() 不同的是，
+   *                                  该接口只有四个输入参数，没有提供初始相对位姿，而且它的扫描匹配是在整个子图上进行的。
+   * @param submap_id                 子图的索引
+   * @param submap                    指向考察的子图对象，这个对象的生命周期应当能够覆盖后端优化的计算过程。
+   * @param node_id                   路径节点的索引
+   * @param constant_data             指向路径节点中记录的激光点云数据，这个对象的生命周期应当能够覆盖后端优化的计算过程。
+   *                                  这里包含以下4个更新的字段：
+   *                                  time 是当前同步时间；
+   *                                  gravity_alignment 是重力方向，机器人在局部地图坐标系下的方向；
+   *                                  filtered_gravity_aligned_point_cloud 是经过滤波和重力修正后的扫描数据，从局部地图坐标系平移到机器人坐标系下的扫描数据；
+   *                                  local_pose 为优化后的机器人在局部地图坐标系下的位姿估计，包含位置和方向信息。
+   */
   void MaybeAddGlobalConstraint(
       const SubmapId& submap_id, const Submap2D* submap, const NodeId& node_id,
       const TrajectoryNode::Data* const constant_data);
 
   // Must be called after all computations related to one node have been added.
+  // 必须在添加与一个节点有关的所有计算完成后，才能调用。
+  /**
+   * @brief NotifyEndOfNode  通知对象 constraint_builder_ 完成了一个路径节点的插入工作
+   */
   void NotifyEndOfNode();
 
   // Registers the 'callback' to be called with the results, after all
   // computations triggered by 'MaybeAdd*Constraint' have finished.
   // 'callback' is executed in the 'ThreadPool'.
+  // 在由 "MaybeAdd*Constraint" 触发的所有计算完成之后，使用计算结果来注册要调用的回调 "callback"。
+  // "callback" 在 "ThreadPool" 中执行。
+  /**
+   * @brief WhenDone  当所有的闭环检测任务计算完成之后，注册要调用的回调函数
+   * @param callback  记录了当所有的闭环检测任务结束之后的回调函数
+   */
   void WhenDone(const std::function<void(const Result&)>& callback);
 
   // Returns the number of consecutive finished nodes.
