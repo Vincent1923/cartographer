@@ -329,6 +329,7 @@ void PoseGraph2D::ComputeConstraintsForNode(
       constant_data->local_pose *
       transform::Rigid3d::Rotation(constant_data->gravity_alignment.inverse()));
   // 计算节点在世界坐标系下的位姿 εsj。
+  // 这里是通过后端优化器 optimization_problem_ 中记录的旧图的全局和局部位姿进行转化计算的。
   // 前面两项相乘得到的是局部地图坐标系在世界坐标系下的位姿，
   // 再用它左乘第三项，最后得到节点在世界坐标系下的位姿。
   const transform::Rigid2d global_pose_2d =

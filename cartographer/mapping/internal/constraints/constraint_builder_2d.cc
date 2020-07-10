@@ -82,7 +82,7 @@ ConstraintBuilder2D::~ConstraintBuilder2D() {
 // 接口 MaybeAddConstraint 用于检查子图和路径节点之间是否存在可能的约束。
 // 它有5个输入参数：
 // submap_id 和 node_id 分别是子图和路径节点的索引；
-// 指针 submap 和 constant_data 分别指向了考察的子图对象和路径节点中记录了激光点云数据，
+// 指针 submap 和 constant_data 分别指向了考察的子图对象和路径节点中记录的激光点云数据，
 // 需要注意的是这两个对象的生命周期应当能够覆盖后端优化的计算过程；
 // initial_relative_pose 记录了路径节点相对于子图的初始位姿，提供了优化迭代的一个初值。
 void ConstraintBuilder2D::MaybeAddConstraint(
@@ -111,6 +111,8 @@ void ConstraintBuilder2D::MaybeAddConstraint(
         << "MaybeAddConstraint was called while WhenDone was scheduled.";
   }
   // 然后就向容器 constraints_ 中添加新的约束。至于那个 kQueueLengthMetric 我们暂时先不去管它。
+  // 这里是有一个节点和子图对，就会添加一个指向约束的智能指针，
+  // 如果最后计算的约束得分符合要求，则把约束进行更新，否则这里添加的指针只是空值。
   constraints_.emplace_back();
   kQueueLengthMetric->Set(constraints_.size());
   // constraint 是常量指针，必须初始化，而且一旦初始化完成，则它的值（也就是存放在指针中的那个地址）就不能再改变了。
@@ -215,23 +217,26 @@ void ConstraintBuilder2D::WhenDone(
   when_done_task_ = common::make_unique<common::Task>();
 }
 
-// 函数 DispatchScanMatcherConstruction 用于为新增的子图创建一个扫描匹配器，
+// 函数 DispatchScanMatcherConstruction() 用于为新增的子图创建一个扫描匹配器，
 // 成功创建的匹配器将以 submap_id 为索引被保存在容器 submap_scan_matchers_ 中。
 // 它有两个输入参数，其中 submap_id 记录了子图的索引，而 grid 则是子图的占用栅格表示。
 const ConstraintBuilder2D::SubmapScanMatcher*
 ConstraintBuilder2D::DispatchScanMatcherConstruction(const SubmapId& submap_id,
                                                      const Grid2D* const grid) {
-  // 先通过容器 submap_scan_matchers_ 查询一下是否曾经为该子图创建过扫描匹配器。若是则直接返回所对应的扫描匹配器对象。
+  // 先通过容器 submap_scan_matchers_ 查询一下是否曾经为该子图创建过扫描匹配器。
+  // 若是则直接返回所对应的扫描匹配器对象。
   if (submap_scan_matchers_.count(submap_id) != 0) {
     return &submap_scan_matchers_.at(submap_id);
   }
   // 然后扩展容器 submap_scan_matchers_，并将输入的子图占用栅格填充到新扩展的扫描匹配器中。
   auto& submap_scan_matcher = submap_scan_matchers_[submap_id];
   submap_scan_matcher.grid = grid;
-  // 从配置项中获取扫描匹配器的配置
+  // 接着，从配置项中获取扫描匹配器的配置。
+  // options_.fast_correlative_scan_matcher_options() 在文件 "pose_graph.lua" 中设置。
   auto& scan_matcher_options = options_.fast_correlative_scan_matcher_options();
-  // 同时创建一个临时的任务对象 scan_matcher_task，在它的 lambda 表达式中，使用刚刚获取的配置和占用栅格创建了一个
-  // FastCorrelativeScanMatcher2D 类型的对象。该对象是 Cartographer 通过分支定界进行闭环检测的算法实现。
+  // 同时创建一个临时的任务对象 scan_matcher_task，并通过接口 SetWorkItem() 和 lambda 表达式具体描述工作内容。
+  // 在它的 lambda 表达式中，使用刚刚获取的配置和占用栅格创建了一个 FastCorrelativeScanMatcher2D 类型的对象。
+  // 该对象是 Cartographer 通过分支定界进行闭环检测的算法实现。
   auto scan_matcher_task = common::make_unique<common::Task>();
   scan_matcher_task->SetWorkItem(
       [&submap_scan_matcher, &scan_matcher_options]() {
@@ -239,10 +244,10 @@ ConstraintBuilder2D::DispatchScanMatcherConstruction(const SubmapId& submap_id,
             common::make_unique<scan_matching::FastCorrelativeScanMatcher2D>(
                 *submap_scan_matcher.grid, scan_matcher_options);
       });
-  // 将构建扫描匹配器的任务放置到线程池的调度队列中
+  // 最后，将构建扫描匹配器的任务 scan_matcher_task 放置到线程池的调度队列中，并将刚刚扩展得到的匹配器对象返回。
+  // submap_scan_matcher.creation_task_handle 是线程池任务句柄，类型为 std::weak_ptr<common::Task>。
   submap_scan_matcher.creation_task_handle =
       thread_pool_->Schedule(std::move(scan_matcher_task));
-  // 将刚刚扩展得到的匹配器对象返回
   return &submap_scan_matchers_.at(submap_id);
 }
 
@@ -259,7 +264,8 @@ void ConstraintBuilder2D::ComputeConstraint(
     const SubmapScanMatcher& submap_scan_matcher,
     std::unique_ptr<ConstraintBuilder2D::Constraint>* constraint) {
   // 在函数的一开始，先构建几个临时变量。
-  // initial_pose 用于描述在世界坐标系下路径节点与子图之间的相对位置关系。
+  // initial_pose 用于描述在世界坐标系下路径节点的位置（还是相对于局部地图坐标系的位置？）。
+  // 这里只包含位置信息，没有方向信息。
   const transform::Rigid2d initial_pose =
       ComputeSubmapPose(*submap) * initial_relative_pose;
 
@@ -276,8 +282,14 @@ void ConstraintBuilder2D::ComputeConstraint(
   // 1. Fast estimate using the fast correlative scan matcher.
   // 2. Prune if the score is too low.
   // 3. Refine.
+  // 分三个阶段计算 "pose_estimate"：
+  // 1. 使用 fast correlative scan matcher 进行快速估计。
+  // 2. 如果分数太低，则进行修剪。
+  // 3. 优化。
+  //
   // 根据输入参数 match_full_submap 选择不同的扫描匹配方式，如果没有匹配成功则直接退出。
   if (match_full_submap) {
+    // match_full_submap = true，做全子图栅格的匹配
     kGlobalConstraintsSearchedMetric->Increment();
     if (submap_scan_matcher.fast_correlative_scan_matcher->MatchFullSubmap(
             constant_data->filtered_gravity_aligned_point_cloud,
@@ -291,12 +303,13 @@ void ConstraintBuilder2D::ComputeConstraint(
       return;
     }
   } else {
+    // match_full_submap = false，做子图栅格的部分区域匹配
     kConstraintsSearchedMetric->Increment();
     if (submap_scan_matcher.fast_correlative_scan_matcher->Match(
             initial_pose, constant_data->filtered_gravity_aligned_point_cloud,
             options_.min_score(), &score, &pose_estimate)) {
       // We've reported a successful local match.
-      CHECK_GT(score, options_.min_score());
+      CHECK_GT(score, options_.min_score());  // 检查得分 score 大于 options_.min_score()
       kConstraintsFoundMetric->Increment();
       kConstraintScoresMetric->Observe(score);
     } else {
@@ -312,14 +325,19 @@ void ConstraintBuilder2D::ComputeConstraint(
   // Use the CSM estimate as both the initial and previous pose. This has the
   // effect that, in the absence of better information, we prefer the original
   // CSM estimate.
-  // 最后使用 Ceres 扫描匹配进一步的对刚刚构建的约束进行优化。
+  // 将 CSM 估计值用作初始位姿和先前位姿。这样的结果是，在没有更好信息的情况下，我们更倾向于原始的 CSM 估计。
+  //
+  // 最后使用 Ceres 扫描匹配进一步的对刚刚完成优化的位姿 pose_estimate 进行优化。
   ceres::Solver::Summary unused_summary;
   ceres_scan_matcher_.Match(pose_estimate.translation(), pose_estimate,
                             constant_data->filtered_gravity_aligned_point_cloud,
                             *submap_scan_matcher.grid, &pose_estimate,
                             &unused_summary);
 
-  // 并将这种新建的约束标记为 INTER_SUBMAP 类型。
+  // 计算节点相对于子图的相对位姿 εij，并将这种新建的约束标记为 INTER_SUBMAP 类型。
+  // 优化之后的 pose_estimate 是节点在局部地图坐标系下的位姿(robot_to_local)，只包含位置信息，没有方向信息，
+  // 而 ComputeSubmapPose(*submap).inverse() 是局部地图坐标系相对于子图的位姿(local_to_submap)，
+  // 所以左乘后得到的就是节点相对于子图的相对位姿。
   const transform::Rigid2d constraint_transform =
       ComputeSubmapPose(*submap).inverse() * pose_estimate;
   constraint->reset(new Constraint{submap_id,
@@ -348,15 +366,19 @@ void ConstraintBuilder2D::ComputeConstraint(
   }
 }
 
-// 函数 RunWhenDoneCallback 是当一轮 MaybeAdd-WhenDone 任务结束后，用来调用 WhenDone 接口注册的回调函数的。
+// 函数 RunWhenDoneCallback() 是当一轮 MaybeAdd-WhenDone 任务结束后，用来调用 WhenDone() 接口注册的回调函数的。
 void ConstraintBuilder2D::RunWhenDoneCallback() {
+  // 临时变量 result 用来保存路径节点和子图之间约束的计算结果，
+  // 而临时变量 callback 则用来记录回调函数对象。
   Result result;
   std::unique_ptr<std::function<void(const Result&)>> callback;
+  // 以下对互斥量 mutex_ 加锁，保护全局变量
   {
     common::MutexLocker locker(&mutex_);
     CHECK(when_done_ != nullptr);
     // 将 MaybeAdd 过程中得到的约束放到 result 对象中
     for (const std::unique_ptr<Constraint>& constraint : constraints_) {
+      // 如果指针为空值，说明这次计算的约束得分太低，不符合要求。
       if (constraint == nullptr) continue;
       result.push_back(*constraint);
     }
@@ -365,8 +387,11 @@ void ConstraintBuilder2D::RunWhenDoneCallback() {
                 << result.size() << " additional constraints.";
       LOG(INFO) << "Score histogram:\n" << score_histogram_.ToString(10);
     }
-    constraints_.clear();  // 清空约束列表 constraints_
-    callback = std::move(when_done_);  // 用临时变量 callback 记录下回调函数对象
+    // 清空约束列表 constraints_
+    constraints_.clear();
+    // 用临时变量 callback 记录下 when_done_ 记录的回调函数对象。
+    // 这里指针 when_done_ 记录的回调函数对象是在函数 WhenDone() 中记录的。
+    callback = std::move(when_done_);
     when_done_.reset();  // 释放 when_done_ 指针
     kQueueLengthMetric->Set(constraints_.size());
   }

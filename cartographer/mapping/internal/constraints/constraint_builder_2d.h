@@ -108,6 +108,8 @@ class ConstraintBuilder2D {
    *                               filtered_gravity_aligned_point_cloud 是经过滤波和重力修正后的扫描数据，从局部地图坐标系平移到机器人坐标系下的扫描数据；
    *                               local_pose 为优化后的机器人在局部地图坐标系下的位姿估计，包含位置和方向信息。
    * @param initial_relative_pose  记录了路径节点相对于子图的初始位姿，提供了优化迭代的一个初值。
+   *                               translation 为路径节点在子图的位置，而 rotation 用四元数表示后近似为 (0,0,0,1)。
+   *                               所以它只包含位置信息，但不包含方向信息。
    */
   void MaybeAddConstraint(const SubmapId& submap_id, const Submap2D* submap,
                           const NodeId& node_id,
@@ -174,12 +176,40 @@ class ConstraintBuilder2D {
 
   // The returned 'grid' and 'fast_correlative_scan_matcher' must only be
   // accessed after 'creation_task_handle' has completed.
+  // 仅在完成 "creation_task_handle" 之后，才可以访问返回的 "grid" 和 "fast_correlative_scan_matcher"。
+  /**
+   * @brief DispatchScanMatcherConstruction  用于为新增的子图创建一个扫描匹配器，
+   *                                         成功创建的匹配器将以 submap_id 为索引被保存在容器 submap_scan_matchers_ 中。
+   * @param submap_id                        子图的索引。这里的子图实际上是处于 kFinished 状态的子图。
+   * @param grid                             子图的占用栅格地图
+   * @return                                 成功构建的扫描匹配器对象
+   */
   const SubmapScanMatcher* DispatchScanMatcherConstruction(
       const SubmapId& submap_id, const Grid2D* grid) REQUIRES(mutex_);
 
   // Runs in a background thread and does computations for an additional
   // constraint, assuming 'submap' and 'compressed_point_cloud' do not change
   // anymore. As output, it may create a new Constraint in 'constraint'.
+  // 假设子图 "submap" 和 "compressed_point_cloud" 不再更改，则在后台线程中运行并针对附加约束进行计算。
+  // 作为输出，它可以在 "constraint" 中创建一个新的 Constraint。
+  /**
+   * @brief ComputeConstraint      在后台线程中完成子图与路径节点之间可能的约束计算。
+   * @param submap_id              待考察的子图的索引。这里的子图实际上是处于 kFinished 状态的子图。
+   * @param submap                 待考察的子图的数据内容
+   * @param node_id                待考察的路径节点的索引
+   * @param match_full_submap      用于指示是否完成遍历子图
+   * @param constant_data          待考察的路径节点的数据内容。这里包含以下4个更新的字段：
+   *                               time 是当前同步时间；
+   *                               gravity_alignment 是重力方向，机器人在局部地图坐标系下的方向；
+   *                               filtered_gravity_aligned_point_cloud 是经过滤波和重力修正后的扫描数据，从局部地图坐标系平移到机器人坐标系下的扫描数据；
+   *                               local_pose 为优化后的机器人在局部地图坐标系下的位姿估计，包含位置和方向信息。
+   * @param initial_relative_pose  描述了路径节点相对于子图的初始位姿，提供了优化迭代的一个初值。
+   *                               translation 为路径节点在子图的位置，而 rotation 用四元数表示后近似为 (0,0,0,1)。
+   *                               所以它只包含位置信息，但不包含方向信息。
+   * @param submap_scan_matcher    进行扫描匹配时所用的匹配器对象
+   * @param constraint             用于输出约束结果。
+   *                               这是一个指向智能指针类型 std::unique_ptr<Constraint> 的指针。
+   */
   void ComputeConstraint(const SubmapId& submap_id, const Submap2D* submap,
                          const NodeId& node_id, bool match_full_submap,
                          const TrajectoryNode::Data* const constant_data,
@@ -187,7 +217,9 @@ class ConstraintBuilder2D {
                          const SubmapScanMatcher& submap_scan_matcher,
                          std::unique_ptr<Constraint>* constraint)
       EXCLUDES(mutex_);
-
+  /**
+   * @brief RunWhenDoneCallback  当一轮 MaybeAdd-WhenDone 任务结束后，用来调用 WhenDone() 接口注册的回调函数的
+   */
   void RunWhenDoneCallback() EXCLUDES(mutex_);
 
 /****************************************** 成员变量 ******************************************/
